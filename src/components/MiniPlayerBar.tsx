@@ -19,7 +19,9 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useNavigationState } from '@react-navigation/native';
 import { useMusicPlayerStore } from '../store/musicPlayerStore';
+import { useUiStore } from '../store';
 import { usePalette, motion, makeShadows } from '../theme';
 import { useSafeAreaInsets } from '../hooks/useSafeAreaInsets';
 import { typography } from '../theme/typography';
@@ -38,6 +40,12 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const shadows = makeShadows(palette.name === 'dark');
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
+  // B1 全局化修复：tab 根页（Home/Media/Rooms/Settings）迷你条避让 TabBar，
+  // 不再遮挡底部 tab 栏；stack 页（音乐库等）仍贴底悬浮。
+  const currentRoute = useNavigationState((s) => s?.routes?.[s.index]?.name);
+  const tabBarHidden = useUiStore((s) => s.tabBarHidden);
+  const isTabRoot = currentRoute === 'Main' && !tabBarHidden;
+  const barBottom = isTabRoot ? 84 + insets.bottom : Math.max(10, insets.bottom - 32);
   const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
   const queue = useMusicPlayerStore((s) => s.queue);
   const playbackState = useMusicPlayerStore((s) => s.playbackState);
@@ -174,7 +182,8 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
           transform: [{ translateY }],
           // 音乐页为栈页面（无悬浮 TabBar），贴底悬浮；覆盖 shadows.md 的 elevation（过高会渲染深色边缘）
           // 位置修正：insets.bottom 是硬编码的系统栏估算，直接贴底（与 dock 一致，不再浮高）
-          bottom: Math.max(10, insets.bottom - 32),
+          // B1 全局化：tab 根页避让 TabBar（barBottom 动态计算），stack 页贴底
+          bottom: barBottom,
           elevation: 3,
         },
       ]}
