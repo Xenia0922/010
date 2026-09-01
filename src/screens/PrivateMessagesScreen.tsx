@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen from '../player';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/types';
@@ -640,7 +640,13 @@ export default function PrivateMessagesScreen() {
                       )
                     ) : !hasText ? <Text style={[styles.msgText, mine && { color: palette.onTint }, !mine && { color: palette.label }]}>{t('[空消息]')}</Text> : null}
                     {playUrl === media?.url ? (
-                      <Video source={{ uri: media!.url }} style={media!.type === 'audio' ? styles.audio : styles.video} controls paused={false} resizeMode="contain" ignoreSilentSwitch="ignore" playInBackground playWhenInactive />
+                      /* 统一播放器（重写）：私信音视频 → 内嵌 PlayerScreen */
+                      <PlayerScreen
+                        inline
+                        source={{ kind: media!.type === 'audio' ? 'audio' : 'vod', url: media!.url }}
+                        meta={{ title: t('消息媒体') }}
+                        persistent
+                      />
                     ) : null}
                     <Text style={[styles.msgTime, mine && { color: 'rgba(255,255,255,0.75)' }, !mine && { color: palette.labelTertiary }]}>{formatTimestamp(msgTimeNumber(item))}</Text>
                   </View>

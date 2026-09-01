@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import MemberPicker from '../components/MemberPicker';
@@ -559,13 +559,17 @@ export default function FlipScreen() {
 
                   {playingAnswerUrl === answerUrl && answerUrl ? (
                     <View style={styles.answerMediaCard}>
-                      <Video
-                        source={{ uri: answerUrl, headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }}
-                        style={flipAnswerType === 2 ? [styles.answerAudio, { backgroundColor: palette.fill2 }] : styles.answerVideo}
-                        controls
-                        paused={false}
-                        resizeMode="contain"
-                        ignoreSilentSwitch="ignore" playInBackground playWhenInactive
+                      {/* 统一播放器（重写）：翻牌答案 → 内嵌 PlayerScreen */}
+                      <PlayerScreen
+                        inline
+                        source={{
+                          kind: flipAnswerType === 2 ? 'audio' : 'vod',
+                          url: answerUrl,
+                          headers: buildPocketHeaders(),
+                        }}
+                        meta={{ title: t('翻牌答案') }}
+                        features={{ kernelSwitch: true }}
+                        persistent
                       />
                     </View>
                   ) : null}

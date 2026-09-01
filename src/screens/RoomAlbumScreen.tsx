@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import { useNavigation } from '@react-navigation/native';
 import { Member } from '../types';
 import MemberPicker from '../components/MemberPicker';
@@ -154,7 +154,6 @@ export default function RoomAlbumScreen() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(t('暂无数据'));
   const [loadError, setLoadError] = useState('');
-  const [videoError, setVideoError] = useState('');
   // 小房间名字/背景解析（用户指定实现）：getRoomInfo → channelInfoList 匹配 channelId
   const [roomName, setRoomName] = useState('');
   const [roomBg, setRoomBg] = useState('');
@@ -250,19 +249,16 @@ export default function RoomAlbumScreen() {
   ), [palette, handleOpen, handleLong]);
 
   if (playing) {
+    // 统一播放器（重写）：相册视频 → PlayerScreen（控制条/全屏/内核切换/错误重试内置）
     return (
       <View style={styles.playerPage}>
-        <ScreenHeader title={playing.title} onBack={() => setPlaying(null)} />
-        {videoError ? (
-          <View style={styles.playerErrorWrap}>
-            <Text style={[styles.playerErrorText, { color: palette.danger }]}>{videoError}</Text>
-            <TouchableOpacity activeOpacity={0.7} style={[styles.playerRetryBtn, { backgroundColor: palette.tint }]} onPress={() => setVideoError('')}>
-              <Text style={styles.playerRetryText}>{t('返回')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-        <Video source={{ uri: playing.url }} style={styles.player} controls resizeMode="contain" ignoreSilentSwitch="ignore" playInBackground playWhenInactive onError={(e: any) => setVideoError(t('视频播放失败：{msg}', { msg: String(e?.error || e?.nativeError || '').slice(0, 120) || t('无法解码或网络错误') }))} />
-        )}
+        <PlayerScreen
+          source={{ kind: 'vod', url: playing.url, headers: buildPocketHeaders() }}
+          meta={{ title: playing.title }}
+          features={{ kernelSwitch: true }}
+          onClose={() => setPlaying(null)}
+          persistent
+        />
       </View>
     );
   }

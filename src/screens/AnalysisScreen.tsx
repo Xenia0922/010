@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { PerfFlatList } from '../components/PerfFlatList';
 
 import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/types';
@@ -718,7 +718,13 @@ export default function AnalysisScreen() {
                           </ScalePressable>
                         ) : null}
                         {flipPlayUrl === answerUrl && answerUrl ? (
-                          <Video source={{ uri: answerUrl, headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }} style={[isVoice ? styles.flipAudio : styles.flipVideo, isVoice && { backgroundColor: palette.surface }]} controls paused={false} resizeMode="contain" ignoreSilentSwitch="ignore" playInBackground playWhenInactive />
+                          <PlayerScreen
+                            inline
+                            source={{ kind: isVoice ? 'audio' : 'vod', url: answerUrl, headers: buildPocketHeaders() }}
+                            meta={{ title: t('翻牌答案') }}
+                            features={{ kernelSwitch: true }}
+                            persistent
+                          />
                         ) : null}
                       </View>
                     ) : !isAnswered ? (
@@ -752,13 +758,12 @@ export default function AnalysisScreen() {
             <TouchableOpacity onPress={() => setPlayMedia(null)} style={styles.videoClose}>
               <Text style={styles.videoCloseText}>{t('关闭')}</Text>
             </TouchableOpacity>
-            <Video
-              source={{ uri: playMedia.url, headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }}
-              style={styles.videoPlayer}
-              controls
-              resizeMode="contain"
-              paused={false}
-              ignoreSilentSwitch="ignore" playInBackground playWhenInactive
+            <PlayerScreen
+              source={{ kind: 'vod', url: playMedia.url, headers: buildPocketHeaders() }}
+              meta={{ title: t('视频') }}
+              features={{ kernelSwitch: true }}
+              onClose={() => setPlayMedia(null)}
+              persistent
             />
           </View>
         </Modal>
