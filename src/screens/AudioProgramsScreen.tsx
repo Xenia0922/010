@@ -6,9 +6,10 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import officialMediaApi from '../api/officialMedia';
 import { useI18n } from '../i18n';
 import { FadeInView, ScalePressable } from '../components/Motion';
@@ -163,18 +164,29 @@ export default function AudioProgramsScreen() {
           <Text style={[styles.playerTitle, { color: palette.label }]} numberOfLines={1}>
             {playing?.title || t('正在播放')}
           </Text>
-          <Video
-            key={playUrls[urlIndex]}
-            source={{ uri: playUrls[urlIndex], headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }}
-            style={styles.audioPlayer}
-            controls
-            paused={false}
-            ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-            onError={() => {
-              if (urlIndex + 1 < playUrls.length) setUrlIndex((prev) => prev + 1);
-              else setStatus(t('音频播放失败：所有备用线路都不可用'));
-            }}
-          />
+          {/* 统一播放器（重写）：电台节目 → 内嵌 PlayerScreen（线路切换保留在 children 按钮） */}
+          <View style={styles.audioPlayer}>
+            <PlayerScreen
+              inline
+              source={{ kind: 'audio', url: playUrls[urlIndex], headers: buildPocketHeaders() }}
+              meta={{ title: playing?.title || t('正在播放') }}
+              features={{ kernelSwitch: true }}
+              persistent
+            >
+              {playUrls.length > 1 ? (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={styles.switchLineBtn}
+                  onPress={() => {
+                    if (urlIndex + 1 < playUrls.length) setUrlIndex((prev) => prev + 1);
+                    else setStatus(t('已无更多备用线路'));
+                  }}
+                >
+                  <Text style={styles.switchLineText}>{t('切换线路')} ({urlIndex + 1}/{playUrls.length})</Text>
+                </TouchableOpacity>
+              ) : null}
+            </PlayerScreen>
+          </View>
         </View>
       ) : null}
 
@@ -339,6 +351,11 @@ const styles = StyleSheet.create({
   playerBar: { marginHorizontal: 16, marginTop: 8, padding: 12, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
   playerTitle: { fontSize: 14, fontWeight: '800', marginBottom: 8 },
   audioPlayer: { height: 48, width: '100%' },
+  switchLineBtn: {
+    position: 'absolute', right: 8, bottom: 10, zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4,
+  },
+  switchLineText: { color: '#fff', fontSize: 10 },
   status: { marginHorizontal: 16, marginTop: 8, fontSize: 12, textAlign: 'center' },
   listContent: { paddingTop: 8, paddingHorizontal: 12, paddingBottom: 120 },
   // hero 播放卡

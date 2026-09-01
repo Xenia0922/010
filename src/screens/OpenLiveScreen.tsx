@@ -11,9 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import { Member } from '../types';
 import MemberPicker from '../components/MemberPicker';
 import { useSettingsStore, useUiStore } from '../store';
@@ -172,20 +171,14 @@ export default function OpenLiveScreen() {
   const [status, setStatus] = useState('');
   const [listError, setListError] = useState('');
   const [playing, setPlaying] = useState<{ url: string; title: string } | null>(null);
-  const [playerError, setPlayerError] = useState('');
-  const [isLandscape, setIsLandscape] = useState(false);
   const loadingRef = useRef(false);
 
-  useEffect(() => () => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
-  }, []);
+  // 播放器生命周期已由统一 PlayerScreen/FullscreenManager 管理（横屏/竖屏/PiP/返回键）
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!playing) return false;
       setPlaying(null);
-      setIsLandscape(false);
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
       return true;
     });
     return () => subscription.remove();
@@ -246,7 +239,6 @@ export default function OpenLiveScreen() {
 
   const playItem = async (item: OpenLiveItem) => {
     setStatus(t('正在解析播放地址...'));
-    setPlayerError('');
     try {
       const url = await resolveStream(item);
       if (needsNative(url)) {
@@ -272,31 +264,21 @@ export default function OpenLiveScreen() {
     }
   };
 
-  const toggleOrientation = () => {
-    const next = !isLandscape;
-    setIsLandscape(next);
-    ScreenOrientation.lockAsync(next ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
-  };
-
   if (playing) {
+    // 统一播放器（重写）：公演回放 → PlayerScreen（控制条/全屏/内核切换/错误重试内置）
     return (
       <View style={styles.playerPage}>
-        <ScreenHeader title={playing.title} onBack={() => setPlaying(null)} right={
-          <HeaderAction label={isLandscape ? t('竖屏') : t('横屏')} onPress={toggleOrientation} />
-        } />
-        {playerError ? (
-          <View style={styles.playerErrorWrap}>
-            <Text style={[styles.playerErrorText, { color: palette.danger }]}>{playerError}</Text>
-            <TouchableOpacity activeOpacity={0.7} style={[styles.playerRetryBtn, { backgroundColor: palette.tint }]} onPress={() => setPlayerError('')}>
-              <Text style={[styles.playerRetryText, { color: palette.onTint }]}>{t('返回')}</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-        <Video source={{ uri: playing.url }} style={styles.player} controls resizeMode="contain" ignoreSilentSwitch="ignore" playInBackground playWhenInactive onError={(e: any) => setPlayerError(t('播放失败：{msg}', { msg: String(e?.error || e?.nativeError || '').slice(0, 120) || t('无法解码或网络错误') }))} />
-        )}
-        <TouchableOpacity activeOpacity={0.7} style={[styles.externalBtn, { backgroundColor: palette.tint }]} onPress={() => Linking.openURL(playing.url)}>
-          <Text style={[styles.externalText, { color: palette.onTint }]}>{t('外部打开')}</Text>
-        </TouchableOpacity>
+        <PlayerScreen
+          source={{ kind: 'vod', url: playing.url, headers: buildPocketHeaders() }}
+          meta={{ title: playing.title }}
+          features={{ kernelSwitch: true }}
+          onClose={() => setPlaying(null)}
+          persistent
+        >
+          <TouchableOpacity activeOpacity={0.7} style={[styles.externalBtn, { backgroundColor: palette.tint }]} onPress={() => Linking.openURL(playing.url)}>
+            <Text style={[styles.externalText, { color: palette.onTint }]}>{t('外部打开')}</Text>
+          </TouchableOpacity>
+        </PlayerScreen>
       </View>
     );
   }

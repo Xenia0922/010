@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Video from 'react-native-video';
+import PlayerScreen, { buildPocketHeaders } from '../player';
 import officialMediaApi from '../api/officialMedia';
 import { useI18n } from '../i18n';
 import { useSettingsStore } from '../store';
@@ -136,20 +136,13 @@ export default function VideoLibraryScreen() {
   if (playUrl) {
     return (
       <View style={styles.playerPage}>
-        <ScreenHeader title={playing?.title || t('视频')} onBack={() => setPlayUrl('')} />
-        <Video
-          source={{ uri: playUrl }}
-          style={styles.videoPlayer}
-          controls
-          paused={false}
-          resizeMode="contain"
-          ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-          onError={(event: any) => {
-            setPlayUrl('');
-            setStatus(t('播放失败：{error}', {
-              error: String(event?.error || event?.nativeError || t('无法解码或网络错误')).slice(0, 160),
-            }));
-          }}
+        {/* 统一播放器（重写）：官方视频 → PlayerScreen（控制条/全屏/内核切换/错误重试内置） */}
+        <PlayerScreen
+          source={{ kind: 'vod', url: playUrl, headers: buildPocketHeaders() }}
+          meta={{ title: playing?.title || t('视频') }}
+          features={{ kernelSwitch: true }}
+          onClose={() => setPlayUrl('')}
+          persistent
         />
       </View>
     );
