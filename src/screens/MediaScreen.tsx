@@ -1570,6 +1570,8 @@ export default function MediaScreen() {
               { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
             ]}
             onClose={() => { setPipPlaying(false); setPlaying(null); }}
+            // 直播流地址有时效（wsSecret）：失败重试 = 重新解析（startPlay），而非重播同 URL
+            onRetry={() => startPlay(playing.item)}
             persistent
           >
             <DanmakuOverlay

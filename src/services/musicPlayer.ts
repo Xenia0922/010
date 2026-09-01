@@ -310,6 +310,51 @@ export const MusicEngine = {
     if (parts.length > 1) candidates.push(...parts);
     if (rawGroup) candidates.push(rawGroup);
     candidates.push(''); // 纯标题兜底（Tier 6 模糊匹配）
+    // R2 公演曲标题常带副标题后缀（如「Starlight (星光)」「蒲公英的脚印 (过渡公演)」），
+    // 歌词索引只收核心标题（Starlight / 蒲公英的脚印）——增加「去括号核心标题」候选，
+    // 让 medium/loose 匹配能命中（此前整串归一化不匹配 → R2 曲目大量「暂无歌词」）。
+    const coreTitle = title.replace(/[（(].*?[)）]/g, '').trim();
+    if (coreTitle && coreTitle !== title) {
+      const coreGroupCandidates: string[] = [];
+      for (const g of candidates) {
+        if (!g) continue;
+        coreGroupCandidates.push(g);
+        coreGroupCandidates.push(`${coreTitle}`.length ? g : g); // 保持 group 不变，仅标题换核心版
+      }
+      try {
+        const { matcher } = await getLyricsMatcher();
+        for (const g of coreGroupCandidates) {
+          const r = matcher.match({ song: coreTitle, group: g });
+          if (r) {
+            const url = `${LYRICS_BASE_URL}/${encodeURI(r.entry.filePath)}`;
+            const cacheKey = `lyric:${r.entry.filePath}`;
+            const cache = await readLyricCache();
+            const hit = cache[cacheKey];
+            if (hit && Date.now() - hit.t < LYRICS_CACHE_TTL) {
+              useMusicPlayerStore.getState().setLyrics(parseLrc(hit.text));
+              return;
+            }
+            const lrcResp = await fetchWithTimeout(url, {}, 10000);
+            const raw = await lrcResp.text();
+            useMusicPlayerStore.getState().setLyrics(parseLrc(raw));
+            cache[cacheKey] = { t: Date.now(), text: raw };
+            const keys = Object.keys(cache);
+            if (keys.length > 200) {
+              const oldest = keys
+                .map((k) => ({ k, t: cache[k].t }))
+                .sort((a, b) => a.t - b.t)
+                .slice(0, keys.length - 200)
+                .map((x) => x.k);
+              oldest.forEach((k) => delete cache[k]);
+            }
+            AsyncStorage.setItem(LYRICS_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
+            return;
+          }
+        }
+      } catch {
+        /* 核心标题匹配失败则走下面的常规流程 */
+      }
+    }
     try {
       const { matcher } = await getLyricsMatcher();
       let best: ReturnType<typeof matcher.match> = null;

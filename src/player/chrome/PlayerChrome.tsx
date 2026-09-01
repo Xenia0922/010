@@ -19,6 +19,8 @@ interface Props {
   onClose?: () => void;
   /** 内嵌模式：不渲染顶栏（列表页内嵌播放器），仅底坞 + 全屏 */
   inline?: boolean;
+  /** 错误重试回调：页面可传「重新解析地址」而非仅重播同 URL（直播流地址有时效） */
+  onRetry?: () => void;
 }
 
 /** 控制条自动隐藏间隔 */
@@ -28,7 +30,7 @@ const CONTROLS_HIDE_MS = 3500;
  * 唯一播放器控制层（重写核心）：B站风格顶栏 + 悬浮底坞 + 更多面板。
  * 所有页面共用；能力按 features 声明渲染。
  */
-export function PlayerChrome({ features = {}, extraActions = [], onClose, inline = false }: Props) {
+export function PlayerChrome({ features = {}, extraActions = [], onClose, inline = false, onRetry }: Props) {
   const { t } = useI18n();
   const palette = usePalette();
   const meta = usePlayerStore((s) => s.meta);
@@ -125,7 +127,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           <TouchableOpacity
             style={styles.errorBtn}
             onPress={() => {
-              usePlayerStore.getState().clearError();
+              // 有 onRetry（页面重新解析）优先；否则仅重播同 URL
+              if (onRetry) onRetry();
+              else usePlayerStore.getState().clearError();
               showControls();
             }}
           >

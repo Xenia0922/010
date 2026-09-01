@@ -126,8 +126,11 @@ export async function loadR2Music(force = false): Promise<any[]> {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        // 新鲜缓存直接命中（24h TTL，用户要求请求次数不要太多）
-        if (parsed && parsed.t && Date.now() - parsed.t < CACHE_TTL && Array.isArray(parsed.list) && parsed.list.length) {
+        if (Array.isArray(parsed.list) && parsed.list.length) {
+          // stale-while-revalidate：缓存（含过期）先返回秒开；过期时后台刷新不阻塞
+          if (parsed.t && Date.now() - parsed.t >= CACHE_TTL) {
+            prefetchR2Music().catch(() => {});
+          }
           return parsed.list;
         }
       } catch {
@@ -159,6 +162,18 @@ export async function loadR2Music(force = false): Promise<any[]> {
     throw error;
   } finally {
     inflight = null;
+  }
+}
+
+/**
+ * 启动静默预取（列表 1MB、gnz.hk 传输慢 ~9s）：App 启动后台拉取写缓存，
+ * 用户进音乐库时直接命中缓存秒开，不再干等首拉。
+ */
+export async function prefetchR2Music(): Promise<void> {
+  try {
+    await loadR2Music(true);
+  } catch {
+    /* 静默：预取失败不影响启动，用户进音乐库时再正常加载 */
   }
 }
 

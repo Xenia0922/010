@@ -8,6 +8,7 @@ import { useSettingsStore, useMemberStore, useAnnouncementStore, useUpdateStore 
 import { loadMembers } from './src/utils/members';
 import { fetchJson } from './src/utils/network';
 import { loadCachedMemberData } from './src/services/memberData';
+import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
 import { startRadioForeground, stopRadioForeground, onRadioStopRequested } from './src/native/LivePlayer';
 import { ensureNotificationPermission } from './src/utils/notifications';
@@ -187,6 +188,8 @@ export default function App() {
     }, 1200);
     // 启动静默检测最新版本：失败/无 Release 一律不打扰，设置页版本号红点由 store 驱动
     useUpdateStore.getState().checkUpdate().catch(() => {});
+    // R2 音乐列表预取（1MB/gnz.hk 慢）：后台拉取写缓存，进音乐库秒开
+    prefetchR2Music().catch(() => {});
     return () => clearTimeout(timer);
   }, [ready]);
 
