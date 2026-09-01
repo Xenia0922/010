@@ -20,6 +20,8 @@ interface MemberState {
   membersLoaded: boolean;
   setMembers: (members: Member[]) => void;
   updateMemberRoomIds: (channelId: string, patch: Partial<Pick<Member, 'serverId' | 'channelId' | 'yklzId'>>) => void;
+  /** 按 userId 回写房间映射（seine 解析结果），供 roomMapCache 使用 */
+  patchMemberByUserId: (memberId: string, patch: Partial<Pick<Member, 'serverId' | 'channelId' | 'yklzId' | 'roomId' | 'liveRoomId'>>) => void;
 }
 
 export const useMemberStore = create<MemberState>((set) => ({
@@ -30,6 +32,12 @@ export const useMemberStore = create<MemberState>((set) => ({
     set((state) => ({
       members: state.members.map((member) =>
         String(member.channelId) === String(channelId) ? { ...member, ...patch } : member,
+      ),
+    })),
+  patchMemberByUserId: (memberId, patch) =>
+    set((state) => ({
+      members: state.members.map((member) =>
+        String(member.id) === String(memberId) ? { ...member, ...patch } : member,
       ),
     })),
 }));

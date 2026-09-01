@@ -15,7 +15,9 @@ public class LivePlayerPackage implements ReactPackage {
   @NonNull
   @Override
   public List<NativeModule> createNativeModules(@NonNull ReactApplicationContext reactContext) {
-    return Collections.singletonList(new LivePlayerModule(reactContext));
+    return Arrays.<NativeModule>asList(
+        new LivePlayerModule(reactContext),
+        new RadioServiceModule(reactContext));
   }
 
   @NonNull

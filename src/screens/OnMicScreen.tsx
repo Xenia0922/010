@@ -6,20 +6,18 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { usePalette } from '../theme';
 import { useI18n } from '../i18n';
 import { useMemberStore } from '../store';
 import { FadeInView } from '../components/Motion';
-import { CenterSpinner } from '../components/Loaders';
 import { EmptyState } from '../components/StateViews';
 import ScreenHeader from '../components/ScreenHeader';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import pocketApi from '../api/pocket48';
 import { useOnMicStore, OnMicEntry } from '../store/onMicStore';
 import { Member } from '../types';
-import { unwrapList, errorMessage } from '../utils/data';
 
 export default function OnMicScreen() {
   const palette = usePalette();
@@ -27,73 +25,62 @@ export default function OnMicScreen() {
   const navigation = useNavigation<any>();
   const members = useMemberStore((state: any) => state.members);
   const onMic = useOnMicStore((state: any) => state.onMic);
-  const [followed, setFollowed] = useState<{ memberId: string; member?: Member }[]>([]);
-  const [loading, setLoading] = useState(false);
+  const scanning = useOnMicStore((state: any) => state.scanning);
+  const scanTotal = useOnMicStore((state: any) => state.total);
+  const scanDone = useOnMicStore((state: any) => state.done);
   const [error, setError] = useState('');
 
+  // v2.7.4：全部成员上麦扫描（有 serverId 或 channelId 的成员都纳入；channelId 缺失由 scan 内按需补齐；
+  // 退团/暂休成员由 store 按官方分类过滤，不进扫描）
   const buildInputs = useCallback(() => {
-    return followed
-      .map((item) => ({
-        memberId: item.memberId,
-        name: String(item.member?.ownerName || item.memberId),
-        channelId: String(item.member?.channelId || ''),
-        serverId: String(item.member?.serverId || ''),
-        smallChannelId: String(item.member?.yklzId || ''),
+    return members
+      .map((item: any) => ({
+        memberId: String(item.id || item.userId || ''),
+        name: String(item.ownerName || item.realName || item.id || ''),
+        channelId: String(item.channelId || ''),
+        serverId: String(item.serverId || ''),
+        smallChannelId: String(item.yklzId || ''),
+        state: String(item.state || ''),
       }))
-      .filter((m: any) => m.channelId);
-  }, [followed]);
-
-  const loadFollowed = useCallback(async () => {
-    setLoading(true);
-    try {
-      const idsRes = await pocketApi.getFollowedIds();
-      const idsArr = unwrapList(idsRes, ['content.data', 'content', 'data', 'list']).map(String);
-      const followedMembers = idsArr
-        .map((id: string) => {
-          const member = members.find((item: any) => String(item.id || item.userId) === id);
-          return { memberId: id, member };
-        })
-        .filter((item: any) => item.member?.channelId);
-      setFollowed(followedMembers);
-      setError('');
-    } catch (e: any) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
+      .filter((m: any) => m.memberId && (m.channelId || m.serverId));
   }, [members]);
 
-  const scan = useCallback(() => {
+  const scan = useCallback((opts?: { force?: boolean }) => {
     const inputs = buildInputs();
-    if (inputs.length) useOnMicStore.getState().scan(inputs);
+    if (inputs.length) useOnMicStore.getState().scan(inputs, opts);
   }, [buildInputs]);
 
-  // 进入页面拉取关注列表并扫描上麦状态；tab 可见时每 45s 静默刷新
   useEffect(() => {
-    let active = true;
-    loadFollowed().then(() => { if (active) scan(); });
-    return () => { active = false; };
-  }, [loadFollowed, scan]);
+    setError('');
+    if (!members.length) setError(t('暂无成员数据，请先刷新成员库'));
+    // 进入页面强制扫描一次全部成员（force 绕过 60s 节流）
+    scan({ force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // tab 可见时每 60s 静默刷新（store 内部节流 60s + 预算制增量：每轮 1/3 成员，约 3 轮全覆盖）
   useFocusEffect(
     useCallback(() => {
-      scan();
-      const id = setInterval(scan, 45000);
+      const id = setInterval(() => scan(), 60000);
       return () => clearInterval(id);
     }, [scan]),
   );
 
-  const entries: OnMicEntry[] = followed
-    .map((item) => onMic[item.memberId])
+  const entries: OnMicEntry[] = members
+    .map((m: any) => onMic[String(m.id || m.userId || '')])
     .filter((e: OnMicEntry | undefined): e is OnMicEntry => !!e);
 
   const renderItem = ({ item, index }: { item: OnMicEntry; index: number }) => {
-    const member = followed.find((f) => f.memberId === item.memberId)?.member;
+    const member = members.find((m: any) => String(m.id || m.userId) === item.memberId);
     return (
       <FadeInView delay={index < 12 ? 60 + index * 25 : 0} duration={300} style={{ marginHorizontal: 16, marginTop: index === 0 ? 12 : 8 }}>
         <TouchableOpacity
           style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.hairline, borderWidth: StyleSheet.hairlineWidth }]}
-          onPress={() => member && navigation.navigate('RoomRadioScreen', { member })}
+          onPress={() => member && navigation.navigate('RoomRadioScreen', {
+            member,
+            initialMode: item.smallVoice ? 'small' : 'big',
+            streamUrl: item.streamUrl || '',
+          })}
           activeOpacity={0.9}
         >
           {member?.avatar ? (
@@ -128,10 +115,18 @@ export default function OnMicScreen() {
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       <ScreenHeader title={t('上麦')} />
+      {scanning ? (
+        <View style={[styles.scanBar, { backgroundColor: palette.surface, borderColor: palette.hairline }]}>
+          <ActivityIndicator size="small" color={palette.tint} style={{ marginRight: 8 }} />
+          <Text style={[styles.scanBarText, { color: palette.labelSecondary }]}>
+            {t('正在扫描全部成员上麦状态 {done}/{total}...', { done: Math.min(scanDone, scanTotal), total: scanTotal })}
+          </Text>
+        </View>
+      ) : null}
       {error && entries.length === 0 ? (
-        <EmptyState icon="alert-circle-outline" title={t('加载失败')} hint={error} onAction={() => { loadFollowed().then(scan); }} />
+        <EmptyState icon="alert-circle-outline" title={t('加载失败')} hint={error} onAction={() => scan({ force: true })} />
       ) : entries.length === 0 ? (
-        <EmptyState icon="microphone-off" title={t('暂无成员上麦')} hint={t('关注成员没有正在上麦的房间')} />
+        <EmptyState icon="microphone-off" title={t('暂无成员上麦')} hint={t('当前没有成员在语音麦上')} />
       ) : (
         <FlatList
           data={entries}
@@ -147,6 +142,17 @@ export default function OnMicScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  scanBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  scanBarText: { fontSize: 12, fontWeight: '600' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

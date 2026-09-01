@@ -55,22 +55,58 @@ export function memberSearchText(member: Member): string {
   ].join(' ').toLowerCase();
 }
 
+/**
+ * 成员状态分类（对齐 yk1z 库，用户确认的最终语义）：
+ *  - 库记录（isInGroup 已知）：isInGroup=false → 毕业(1)/退团(2)/暂休(3)；true → 在团（status 2/3 优先判离/暂休）
+ *  - 官方 "IDFT" 队伍名只有杨添淩 1 人是真在团（库 isInGroup=true），其余官方 IDFT 标的都是毕业成员
+ *    ——所以必须用库的 isInGroup，不能信官方 status/teamName
+ *  - 仅官方记录（库未收录的新成员）：status 2=退团 3=暂休 1=在团（荣誉毕业生/明星殿堂→毕业）0=在团
+ */
+export function classifyMemberState(raw: any): string {
+  if (raw?.state) return raw.state;
+  const inGroupKnown = raw?.isInGroup !== undefined && raw?.isInGroup !== null;
+  const status = Number(raw?.status ?? raw?.memberStatus);
+  const team = String(raw?.teamName || raw?.team || '');
+  if (inGroupKnown) {
+    if (raw.isInGroup === false) {
+      if (status === 1) return 'graduated';
+      if (status === 2) return 'left';
+      if (status === 3) return 'paused';
+      return 'unknown';
+    }
+    // isInGroup=true：在团（status 2/3 视为退团/暂休）
+    if (status === 2) return 'left';
+    if (status === 3) return 'paused';
+    return 'active';
+  }
+  // 仅官方（库未收录的新成员）：官方 status 编码
+  if (status === 2) return 'left';
+  if (status === 3) return 'paused';
+  if (status === 1) {
+    if (team.indexOf('荣誉毕业生') >= 0 || team.indexOf('明星殿堂') >= 0) return 'graduated';
+    return 'active';
+  }
+  if (status === 0) return 'active';
+  return 'unknown';
+}
+
 export function normalizeMember(raw: any): Member {
   return {
     ...raw,
     id: fallbackMemberId(raw),
-    ownerName: text(raw?.ownerName || raw?.starName || raw?.name || raw?.nickname),
+    ownerName: text(raw?.ownerName || raw?.starName || raw?.name || raw?.realName || raw?.nickname),
     serverId: text(raw?.serverId),
     channelId: text(raw?.channelId || raw?.roomId),
     yklzId: text(raw?.yklzId || raw?.smallRoomId || raw?.smallChannelId),
     roomId: text(raw?.roomId),
     liveRoomId: text(raw?.liveRoomId),
-    team: text(raw?.team),
+    team: text(raw?.team || raw?.teamName),
     pinyin: text(raw?.pinyin),
     avatar: text(raw?.avatar),
     groupName: text(raw?.groupName),
     teamId: text(raw?.teamId),
     isInGroup: raw?.isInGroup !== false,
+    state: classifyMemberState(raw),
   };
 }
 

@@ -12,6 +12,8 @@ export interface Member {
   avatar: string;
   groupName: string;
   teamId: string;
+  /** 成员状态分类（官方源优先）：active 在团 / left 退团 / graduated 毕业 / paused 暂休 / unknown 未知 */
+  state?: string;
 }
 
 export interface RoomMessage {

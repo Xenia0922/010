@@ -125,6 +125,12 @@ export default function ProfileScreen() {
           <View style={styles.infoGrid}>
             <InfoItem label={t('成员 ID')} value={firstText(selectedMember.id)} />
             <InfoItem label={t('拼音')} value={firstText(selectedMember.pinyin)} />
+            {/* 状态分类（官方源优先）：在团/退团/毕业/暂休 */}
+            {selectedMember.state && selectedMember.state !== 'unknown' ? (
+              <InfoItem label={t('状态')} value={t({
+                active: '在团', left: '退团', graduated: '毕业', paused: '暂休',
+              }[selectedMember.state] || '未知')} />
+            ) : null}
             {raw.birthday ? <InfoItem label={t('生日')} value={firstText(raw.birthday)} /> : null}
             {raw.birthplace ? <InfoItem label={t('出生地')} value={firstText(raw.birthplace)} /> : null}
             {raw.constellation ? <InfoItem label={t('星座')} value={firstText(raw.constellation)} /> : null}

@@ -10,7 +10,7 @@ export type RootStackParamList = {
   ProfileScreen: undefined;
   PhotosScreen: undefined;
   RoomAlbumScreen: undefined;
-  RoomRadioScreen: { member?: any } | undefined;
+  RoomRadioScreen: { member?: any; initialMode?: 'big' | 'small'; streamUrl?: string } | undefined;
   OpenLiveScreen: undefined;
   OnMicScreen: undefined;
   PrivateMessagesScreen: { targetUserId?: string; targetName?: string } | undefined;

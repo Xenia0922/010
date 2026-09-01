@@ -64,17 +64,31 @@ function extractStack(args: unknown[]): string | undefined {
 
 // ===== 对外 API =====
 
+/** console.debug 转发：logcat（ReactNativeJS tag）可见，且不被 installConsoleCapture 捕获 → 不重复 */
+function tee(level: 'info' | 'warn' | 'error', tag: string | undefined, msg: string, stack?: string) {
+  try {
+    const line = tag ? `[${tag}] ${msg}` : msg;
+    if (level === 'error') console.debug(`[ERR] ${line}${stack ? `\n${stack}` : ''}`);
+    else console.debug(line);
+  } catch {
+    /* 忽略 */
+  }
+}
+
 export function logInfo(msg: string, ctx?: string) {
+  tee('info', ctx, msg);
   write({ id: genId(), t: Date.now(), level: 'info', msg, ctx });
 }
 
 export function logWarn(msg: string, ctx?: string) {
+  tee('warn', ctx, msg);
   write({ id: genId(), t: Date.now(), level: 'warn', msg, ctx });
 }
 
 export function logError(err: unknown, ctx?: string) {
   const msg = err instanceof Error ? err.message : stringifyArg(err);
   const stack = err instanceof Error ? err.stack : undefined;
+  tee('error', ctx, msg, stack);
   write({ id: genId(), t: Date.now(), level: 'error', msg, stack, ctx });
 }
 
