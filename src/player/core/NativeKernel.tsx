@@ -13,7 +13,7 @@ interface Props {
   rate: number;
   /** 续播起点（onLoad 后 seek） */
   resumeAt?: number;
-  onLoad: (duration: number) => void;
+  onLoad: (duration: number, naturalSize?: { width: number; height: number }) => void;
   onProgress: (t: number) => void;
   onEnd: () => void;
   onError: (detail: string) => void;
@@ -49,7 +49,13 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       playInBackground
       playWhenInactive
       onLoad={(e) => {
-        onLoad(e.duration || 0);
+        const ns = e?.naturalSize;
+        onLoad(
+          e.duration || 0,
+          ns && Number(ns.width) > 0 && Number(ns.height) > 0
+            ? { width: Number(ns.width), height: Number(ns.height) }
+            : undefined,
+        );
         if (resumeAt && resumeAt > 1) {
           try {
             videoRef.current?.seek?.(resumeAt);

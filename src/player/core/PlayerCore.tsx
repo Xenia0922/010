@@ -12,7 +12,7 @@ import { WebKernel } from './WebKernel';
  *  - hls/mp4/audio → native（RNV）
  *  - 用户切网页 / 原生失败 → web（flv.js + hls.js）
  */
-export function PlayerCore() {
+export function PlayerCore({ onVideoSize }: { onVideoSize?: (w: number, h: number) => void }) {
   const source = usePlayerStore((s) => s.source);
   const state = usePlayerStore((s) => s.state);
   const activeKernel = usePlayerStore((s) => s.activeKernel);
@@ -37,11 +37,14 @@ export function PlayerCore() {
   }, [seekTarget, useWebKernel, activeKernel]);
 
   const handleLoad = useCallback(
-    (duration: number) => {
+    (duration: number, naturalSize?: { width: number; height: number }) => {
       setDuration(duration);
       setState('playing');
+      if (onVideoSize && naturalSize) {
+        onVideoSize(naturalSize.width, naturalSize.height);
+      }
     },
-    [setDuration, setState],
+    [setDuration, setState, onVideoSize],
   );
 
   const handleProgress = useCallback(

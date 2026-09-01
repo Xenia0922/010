@@ -13,6 +13,8 @@ interface Props extends PlayerScreenProps {
   persistent?: boolean;
   /** 内嵌模式：容器透明由外部定高，Chrome 无顶栏；点全屏 → Modal 全屏呈现 */
   inline?: boolean;
+  /** 视频实际尺寸回调（气泡/列表按内容比例自适应容器） */
+  onVideoSize?: (w: number, h: number) => void;
 }
 
 /**
@@ -29,7 +31,7 @@ interface Props extends PlayerScreenProps {
  *   onClose={() => ...}
  * />
  */
-export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false }: Props) {
+export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false, onVideoSize }: Props) {
   const openedFor = useRef('');
   const sourceUrl = source.url || '';
   const fullscreen = usePlayerStore((s) => s.fullscreen);
@@ -50,7 +52,7 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
 
   const content = (
     <View style={[styles.container, inline && !fullscreen ? styles.inline : null]}>
-      <PlayerCore />
+      <PlayerCore onVideoSize={onVideoSize} />
       {children}
       <PlayerChrome features={features} extraActions={extraActions} onClose={onClose} inline={inline} />
       <FullscreenManager />

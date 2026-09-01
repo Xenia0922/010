@@ -49,6 +49,7 @@ import {
 import { t, useI18n } from '../i18n';
 import { logInfo } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
+import PlayerScreen from '../player';
 import ZoomImageModal from '../components/ZoomImageModal';
 import { LiveExoView, setLiveImmersiveMode } from '../native/LivePlayer';
 import { enqueueDownload } from '../services/downloads';
@@ -157,6 +158,44 @@ const PLAY_URL_FIELDS = [
 function shortName(member?: Member, fallback = '') {
   const raw = member?.ownerName || fallback || t('未知成员');
   return raw.replace(/^(SNH48|GNZ48|BEJ48|CKG48|CGT48)-/, '');
+}
+
+/** 房间消息气泡内嵌媒体播放器（统一 PlayerScreen）：
+ *  音频 → 隐藏小容器；视频 → 按内容比例自适应高度（maxHeight 340，与旧 AdaptiveAspectVideo 一致） */
+function RoomMediaPlayer({ media }: { media: RoomMedia }) {
+  const [aspect, setAspect] = useState(16 / 9);
+  const [boxW, setBoxW] = useState(0);
+  const isAudio = media.type === 'audio';
+  const height = isAudio ? 48 : boxW > 0 && aspect > 0 ? Math.min(boxW / aspect, 340) : 200;
+  return (
+    <View
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0) setBoxW(w);
+      }}
+      style={{
+        height,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: isAudio ? 'transparent' : '#000',
+        marginTop: 6,
+      }}
+    >
+      <PlayerScreen
+        inline
+        source={{
+          kind: isAudio ? 'audio' : 'vod',
+          url: media.url,
+          headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' },
+        }}
+        meta={{ title: media.title || '' }}
+        onVideoSize={(w, h) => {
+          if (w > 0 && h > 0) setAspect(w / h);
+        }}
+        persistent
+      />
+    </View>
+  );
 }
 
 /** 通用文本限位（房间名等） */
@@ -1984,24 +2023,9 @@ export default function FollowedRoomsScreen() {
                   <TouchableOpacity style={styles.openLinkBtn} onPress={() => Linking.openURL(media.url).catch(() => {})} activeOpacity={0.85}>
                     <Text style={[styles.openLinkText, { color: palette.tint }]} numberOfLines={1}>{media.url}</Text>
                   </TouchableOpacity>
-                ) : media.type === 'audio' ? (
-                  <View style={styles.inlineAudioWrap}>
-                    <Video
-                      source={playerSource(media.url)}
-                      style={styles.inlineAudioHidden}
-                      paused={false}
-                      ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-                      onEnd={() => setPlayingMedia(null)}
-                    />
-                  </View>
                 ) : (
-                  <AdaptiveAspectVideo
-                    url={media.url}
-                    controls
-                    paused={false}
-                    resizeMode="contain"
-                    maxHeight={340}
-                  />
+                  /* 统一播放器（重写）：房间消息音视频 → 内嵌 PlayerScreen（比例自适应） */
+                  <RoomMediaPlayer media={media} />
                 )
               ) : null}
             </View>
@@ -2031,38 +2055,25 @@ export default function FollowedRoomsScreen() {
           </>
         ) : null}
         {roomPlayer ? (
-          <View style={[styles.roomPlayerPage, roomPlayerFullscreen && styles.roomPlayerPageFullscreen]}>
-            {!roomPlayerFullscreen ? <View style={styles.roomPlayerHeader}>
-              <TouchableOpacity onPress={closeRoomPlayer} style={styles.roomPlayerBack} activeOpacity={0.85}>
-                <Text style={[styles.roomPlayerBackText, { color: palette.tint }]}>{t('返回房间')}</Text>
-              </TouchableOpacity>
-              <Text style={styles.roomPlayerTitle} numberOfLines={1}>{roomPlayer.title}</Text>
-              <TouchableOpacity onPress={handleRoomMiniPlayer} style={styles.roomPlayerTool} activeOpacity={0.85} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <MaterialCommunityIcons name="picture-in-picture-bottom-right-outline" size={17} color={palette.tint} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={openRoomRankPanel} style={styles.roomPlayerTool} activeOpacity={0.85} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <Text style={styles.roomPlayerToolText}>{t('贡献榜')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setRoomPlayerFullscreen(true)} style={styles.roomPlayerTool} activeOpacity={0.85} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <Text style={styles.roomPlayerToolText}>{t('全屏')}</Text>
-              </TouchableOpacity>
-            </View> : (
-              <TouchableOpacity onPress={() => setRoomPlayerFullscreen(false)} style={styles.exitRoomFullscreenBtn} activeOpacity={0.85}>
-                <Text style={styles.exitRoomFullscreenText}>{t('退出全屏')}</Text>
-              </TouchableOpacity>
-            )}
-            {roomPlayer.needsVlc && Platform.OS === 'android' && LiveExoView ? (
-              <LiveExoView style={styles.roomNativeVideo} url={roomPlayer.url} />
-            ) : (
-              <Video
-                source={playerSource(roomPlayer.url)}
-                style={styles.roomNativeVideo}
-                controls
-                paused={false}
-                resizeMode="contain"
-                ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-              />
-            )}
+          /* 统一播放器（重写）：房间直播/录播 → PlayerScreen（控制条/全屏/内核路由/小窗/贡献榜） */
+          <View style={[styles.roomPlayerPage, { backgroundColor: '#000' }]}>
+            <PlayerScreen
+              source={{
+                kind: roomPlayer.isLive ? 'live' : 'vod',
+                url: roomPlayer.url,
+                liveId: roomPlayer.liveId,
+                needsNativeExo: roomPlayer.needsVlc,
+                headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' },
+              }}
+              meta={{ title: roomPlayer.title, cover: roomPlayer.cover }}
+              features={{ kernelSwitch: true }}
+              extraActions={[
+                { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleRoomMiniPlayer },
+                { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: openRoomRankPanel },
+              ]}
+              onClose={closeRoomPlayer}
+              persistent
+            />
             <Modal visible={rankVisible} transparent animationType="slide" onRequestClose={() => setRankVisible(false)}>
               <View style={styles.roomModalShade}>
                 <View style={[styles.roomRankPanel, { backgroundColor: palette.surface }]}>
