@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState } from 'react-native';
 import { PerfFlatList } from '../components/PerfFlatList';
+import { setLiveImmersiveMode } from '../native/LivePlayer';
 import { usePalette, radii, radiiAlias } from '../theme';
 import { useResolvedTheme } from '../hooks/useAppTheme';
 
@@ -12,11 +13,9 @@ import {
   ImageBackground,
   Linking,
   Modal,
-  Platform,
   ScrollView,
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   TextInput,
   StyleSheet,
@@ -51,7 +50,6 @@ import { logInfo } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
 import PlayerScreen from '../player';
 import ZoomImageModal from '../components/ZoomImageModal';
-import { LiveExoView, setLiveImmersiveMode } from '../native/LivePlayer';
 import { enqueueDownload } from '../services/downloads';
 import { memberSearchText } from '../utils/members';
 import { getBgDisplayUri, ensureBgCached } from '../services/roomBgCache';
@@ -832,98 +830,6 @@ function playerSource(url: string) {
 // - 默认 16:9，避免第一帧 onLoad 之前视觉塌陷
 // - maxHeight 防止异常长方形视频挤爆消息气泡
 // - borderRadius / backgroundColor 与 inlineVideo 旧样式一致
-function AdaptiveAspectVideo({
-  url,
-  paused,
-  controls,
-  muted,
-  onLoad,
-  resizeMode = 'contain',
-  maxHeight = 340,
-  portraitWidth = 200,
-}: {
-  url: string;
-  paused?: boolean;
-  controls?: boolean;
-  muted?: boolean;
-  onLoad?: (data: any) => void;
-  resizeMode?: 'contain' | 'cover' | 'stretch' | 'none';
-  /** 视频画面最大高度（防异常超高/超长视频撑爆气泡） */
-  maxHeight?: number;
-  /** 竖屏（9:16 等）视频的显示宽度：竖屏视频按此窄宽 + 真实比例渲染，避免被横向撑满后上下压扁 */
-  portraitWidth?: number;
-}) {
-  const [aspect, setAspect] = useState<number | null>(null);
-  // 容器实际宽度（onLayout 测量）。RN 的 width:100% + aspectRatio + maxHeight 三者会互相冲突
-  // （高度被 clamp 时宽度不联动，导致竖屏视频被压扁/变形）—— 所以改为「量宽 → 按真实比例算高」。
-  const [boxW, setBoxW] = useState(0);
-  const handleLoad = (data: any) => {
-    try {
-      const w = Number(data?.naturalSize?.width);
-      const h = Number(data?.naturalSize?.height);
-      if (w > 0 && h > 0) {
-        setAspect(w / h);
-      }
-    } catch {}
-    // 诊断：房间视频小窗的真实尺寸与旋转，确认 180° 来源（release 可见，限频）
-    try {
-      const dbg = `nat=${data?.naturalSize?.width}x${data?.naturalSize?.height} dur=${data?.duration}`;
-      if (__diagStamp('roomVideoLoad', 15000)) console.log('[diag:roomVideo:load]', dbg);
-    } catch {}
-    if (onLoad) onLoad(data);
-  };
-  const handleVideoTracks = (e: any) => {
-    try {
-      if (__diagStamp('roomVideoTracks', 15000))
-        console.log('[diag:roomVideo:tracks]', JSON.stringify(e?.videoTracks));
-    } catch {}
-  };
-  const ratio = aspect && aspect > 0 ? aspect : 16 / 9;
-  const isPortrait = ratio < 1;
-  // 竖屏：窄宽 + 真实比例（高 = 宽 / ratio）；横屏/方屏：铺满可用宽，高度按比例，超 maxHeight 再降宽
-  const vw = isPortrait ? portraitWidth : boxW > 0 ? boxW : undefined;
-  let vh: number | undefined;
-  if (vw && ratio > 0) {
-    vh = Math.round(vw / ratio);
-    if (!isPortrait && vh > maxHeight) vh = maxHeight;
-  } else if (!vw) {
-    vh = 190; // onLayout 前占位
-  }
-  const container = {
-    width: '100%' as const,
-    marginTop: 8,
-    backgroundColor: '#000',
-    borderRadius: 12,
-    overflow: 'hidden' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-  };
-  return (
-    <View style={container} onLayout={(e) => setBoxW(Math.round(e.nativeEvent.layout.width))}>
-      <Video
-        source={playerSource(url)}
-        style={{ width: vw || '100%', height: vh, backgroundColor: '#000' } as any}
-        paused={paused}
-        controls={controls}
-        muted={muted}
-        resizeMode={resizeMode}
-        ignoreSilentSwitch="ignore"
-        playInBackground
-        playWhenInactive
-        onLoad={handleLoad}
-        onVideoTracks={handleVideoTracks}
-      />
-    </View>
-  );
-}
-
-// 视频消息卡片预览。
-// 设计原则（v2.7.3-fix7，重写）：
-//  1. 封面「不渲染视频画面」——之前用 <Video> 实时渲染 paused 画面做封面，会触发
-//     ExoPlayer 在 Android 上对 metadata rotation（如 180°）不自动应用的问题，画面倒转。
-//     改用封面图（有 cover）或纯色占位（无 cover），从根上消除旋转问题。
-//  2. 时长仍要准——消息体里没有 duration 字段（实测只有 msgTime 时间戳），所以时长
-//     只能靠播放器解析。保留一个「隐藏探测 Video」（1px、透明、不可见），onLoad 拿到
 //     ExoPlayer 解析的真实 duration（秒）回填角标。探测 Video 不显示画面，不受旋转影响。
 function VideoCoverCard({ media, onPress, onLongPress }: { media: RoomMedia; onPress: () => void; onLongPress: () => void }) {
   const palette = usePalette();

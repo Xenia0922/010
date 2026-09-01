@@ -6,26 +6,22 @@ import {
   Animated,
   AppState,
   Easing,
-  Platform,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { setPipPlaying } from '../utils/pip';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSettingsStore } from '../store';
-import { setPipPlaying, setPipAspect } from '../utils/pip';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import PlayerScreen from '../player';
 import { FadeInView, ScalePressable } from '../components/Motion';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
-import { CenterSpinner } from '../components/Loaders';
 import { EmptyState, ErrorState } from '../components/StateViews';
 import { BilibiliLiveRoom } from '../types';
 import { RootStackParamList } from '../navigation/types';

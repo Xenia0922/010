@@ -4,26 +4,21 @@ import { PerfFlatList } from '../components/PerfFlatList';
 
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   AppState,
   BackHandler,
   DeviceEventEmitter,
-  FlatList,
   Image,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableWithoutFeedback,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -36,7 +31,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import { VODItem, Member } from '../types';
 import { formatTimestamp, formatDuration } from '../utils/format';
 import { errorMessage, normalizeUrl, pickText, unwrapList } from '../utils/data';
-import { getResumePosition, saveResumePosition, clearResumePosition } from '../utils/resumePosition';
+import { getResumePosition } from '../utils/resumePosition';
 import { logWarn } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
 import { setLiveImmersiveMode } from '../native/LivePlayer';
@@ -45,7 +40,6 @@ import { DanmakuOverlay } from '../components/DanmakuOverlay';
 import DanmakuSettingsSheet from '../components/DanmakuSettingsSheet';
 import { parseDanmaku, DanmakuItem } from '../utils/danmaku';
 import { memberSearchText } from '../utils/members';
-import { CenterSpinner } from '../components/Loaders';
 import { EmptyState } from '../components/StateViews';
 import { LoginPrompt } from '../components/LoginPrompt';
 import { Button } from '../components/Button';
