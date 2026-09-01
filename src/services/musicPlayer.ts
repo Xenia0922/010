@@ -25,7 +25,10 @@ async function readLyricCache(): Promise<Record<string, { t: number; text: strin
 export function isPlayableHost(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return host.endsWith('.48.cn') || host === 'snh48.com' || host === 'www.snh48.com';
+    if (host.endsWith('.48.cn') || host === 'snh48.com' || host === 'www.snh48.com') return true;
+    // R2 音乐库子域（music.gnz.hk）：正常媒体 CDN（audio/mpeg、image/jpeg 200），
+    // 仅放行子域而非整个 gnz.hk（gnz.hk 主域曾对移动端回 403 HTML 挑战页导致 ExoPlayer 崩溃）
+    return host === 'music.gnz.hk';
   } catch {
     return false;
   }

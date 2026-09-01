@@ -14,6 +14,7 @@ import {
 import Video from 'react-native-video';
 import officialMediaApi from '../api/officialMedia';
 import { loadOfficialSiteMusic } from '../api/officialSiteMusic';
+import { loadR2Music } from '../api/r2Music';
 import { useSettingsStore, useUiStore } from '../store';
 import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import { MusicEngine, mediaUrl as buildMediaUrl, isPlayableHost } from '../services/musicPlayer';
@@ -66,14 +67,19 @@ function EqualizerBars({ color, size = 13 }: { color: string; size?: number }) {
 }
 
 /** 拼接歌曲元信息并去重：专辑/歌手/团体名常重复（如 album=SNH48 + artist=SNH48），只保留一份 */
-const GROUP_TABS = ['ALL', 'SNH48', 'GNZ48', 'BEJ48', 'CKG48', 'CGT48', 'FAV'];
+const GROUP_TABS = ['ALL', 'SNH48', 'GNZ48', 'BEJ48', 'AKB48', 'CKG48', 'CGT48', 'SHY48', 'TSH48', 'TPE48', '7SENSES', 'FAV'];
 const GROUP_LABELS: Record<string, string> = {
   ALL: '全部',
   SNH48: 'SNH48',
   GNZ48: 'GNZ48',
   BEJ48: 'BEJ48',
+  AKB48: 'AKB48',
   CKG48: 'CKG48',
   CGT48: 'CGT48',
+  SHY48: 'SHY48',
+  TSH48: 'TSH48',
+  TPE48: 'TPE48',
+  '7SENSES': '7SENSES',
   FAV: '收藏',
 };
 const CHIP_MIN_WIDTH = 64;
@@ -116,16 +122,44 @@ export default function MusicLibraryScreen() {
     return list;
   }, [query, songs, group, favorites]);
 
-  // 仅使用官方源（口袋48官网静态 JS，一次全量、无 token）—— 完整官方曲库。
+  // 双源合并：官方源（口袋48官网静态 JS）+ R2 音乐库（music.gnz.hk 公演音频，1559 首）。
+  // 去重键 title|artist（官方源优先）；任一源失败不阻塞另一源，合并结果为空才报错。
   const loadAll = async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     setStatus('');
     try {
-      const official = await loadOfficialSiteMusic(false);
-      setSongs(official);
+      const [officialRes, r2Res] = await Promise.allSettled([
+        loadOfficialSiteMusic(false),
+        loadR2Music(false),
+      ]);
+      const official = officialRes.status === 'fulfilled' ? officialRes.value : [];
+      const r2 = r2Res.status === 'fulfilled' ? r2Res.value : [];
+      if (officialRes.status === 'rejected' && r2Res.status === 'rejected') {
+        const err = (officialRes as PromiseRejectedResult).reason || (r2Res as PromiseRejectedResult).reason;
+        throw err instanceof Error ? err : new Error('音乐列表加载失败');
+      }
+      // 官方源优先：title+artist 同键时保留官方曲目，R2 仅补充官方缺失的（多为公演音频）
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      official.forEach((t: any) => {
+        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
+        seen.add(key);
+        merged.push(t);
+      });
+      r2.forEach((t: any) => {
+        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(t);
+      });
+      setSongs(merged);
       setHasMore(false);
+      // 静默提示各源状态（不打扰）：仅当 R2 失败时提示「官方源可用」，双失败已在上面抛错
+      if (r2Res.status === 'rejected' && officialRes.status === 'fulfilled') {
+        setStatus(t('官方音乐已加载（R2 源暂不可用）'));
+      }
     } catch (error) {
       setStatus(t('加载失败：{msg}', { msg: errorMessage(error) }));
     } finally {
