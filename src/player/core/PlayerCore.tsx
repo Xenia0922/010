@@ -12,7 +12,7 @@ import { WebKernel } from './WebKernel';
  *  - hls/mp4/audio → native（RNV）
  *  - 用户切网页 / 原生失败 → web（flv.js + hls.js）
  */
-export function PlayerCore({ onVideoSize }: { onVideoSize?: (w: number, h: number) => void }) {
+export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVideoSize?: (w: number, h: number) => void; resumeAt?: number }) {
   const source = usePlayerStore((s) => s.source);
   const state = usePlayerStore((s) => s.state);
   const activeKernel = usePlayerStore((s) => s.activeKernel);
@@ -68,8 +68,12 @@ export function PlayerCore({ onVideoSize }: { onVideoSize?: (w: number, h: numbe
 
   const kernelError = useCallback(
     (msg: string) => {
-      setError(msg);
-      setState('error');
+      // 有候选线路 → 自动切换下一线路（B站多线路/官方多备用地址）；全部失败才进 error 态
+      const switched = usePlayerStore.getState().nextCandidate();
+      if (!switched) {
+        setError(msg);
+        setState('error');
+      }
     },
     [setError, setState],
   );
@@ -103,7 +107,8 @@ export function PlayerCore({ onVideoSize }: { onVideoSize?: (w: number, h: numbe
       source={source}
       paused={paused}
       rate={1}
-      resumeAt={position > 1 ? position : 0}
+      volume={source.volume}
+      resumeAt={externalResumeAt && externalResumeAt > 1 ? externalResumeAt : position > 1 ? position : 0}
       onLoad={handleLoad}
       onProgress={handleProgress}
       onEnd={() => setState('paused')}

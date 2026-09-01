@@ -11,6 +11,8 @@ interface Props {
   source: PlayerSource;
   paused: boolean;
   rate: number;
+  /** 音量（B站流响度补偿用，默认 1） */
+  volume?: number;
   /** 续播起点（onLoad 后 seek） */
   resumeAt?: number;
   onLoad: (duration: number, naturalSize?: { width: number; height: number }) => void;
@@ -21,7 +23,7 @@ interface Props {
 
 /** RNV 内核：HLS/mp4/mp3/flac 等 ExoPlayer 支持的流 */
 export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function NativeKernel(
-  { source, paused, rate, resumeAt, onLoad, onProgress, onEnd, onError },
+  { source, paused, rate, volume = 1, resumeAt, onLoad, onProgress, onEnd, onError },
   ref,
 ) {
   const videoRef = useRef<any>(null);
@@ -44,6 +46,7 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       resizeMode="contain"
       paused={paused}
       rate={rate}
+      volume={volume}
       progressUpdateInterval={250}
       ignoreSilentSwitch="ignore"
       playInBackground

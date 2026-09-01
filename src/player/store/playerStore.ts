@@ -13,6 +13,9 @@ interface PlayerState {
   source: PlayerSource | null;
   meta: PlayerMeta;
   danmaku: DanmakuSource;
+  /** 候选线路（播放失败时按序自动切换，source.url 指向当前线路） */
+  candidateUrls: string[];
+  candidateIndex: number;
   // 播放状态
   state: PlaybackState;
   position: number;
@@ -46,12 +49,16 @@ interface PlayerState {
   setQualityQn: (qn: number | null) => void;
   setSeekTarget: (t: number) => void;
   toggleDanmaku: () => void;
+  /** 播放失败时切到下一候选线路；返回是否切换成功（无候选/已到末尾 → false） */
+  nextCandidate: () => boolean;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   source: null,
   meta: { title: '' },
   danmaku: { type: 'none' },
+  candidateUrls: [],
+  candidateIndex: 0,
   state: 'idle',
   position: 0,
   duration: 0,
@@ -65,21 +72,27 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   danmakuOn: true,
 
   open: (source, meta = { title: '' }, danmaku = { type: 'none' }) =>
-    set({
-      source,
-      meta,
-      danmaku,
-      state: source.url ? 'loading' : 'idle',
-      position: 0,
-      duration: 0,
-      error: '',
-      controlsVisible: true,
-      fullscreen: false,
-      useWebKernel: false,
-      activeKernel: source.needsNativeExo ? 'exo' : 'native',
-      qualityQn: null,
-      seekTarget: 0,
-      danmakuOn: true,
+    set((s) => {
+      const urls = (source.urls && source.urls.length ? source.urls : [source.url]).filter(Boolean);
+      return {
+        source,
+        meta,
+        danmaku,
+        state: source.url ? 'loading' : 'idle',
+        position: 0,
+        duration: 0,
+        error: '',
+        controlsVisible: true,
+        fullscreen: false,
+        useWebKernel: false,
+        activeKernel: source.needsNativeExo ? 'exo' : 'native',
+        qualityQn: null,
+        seekTarget: 0,
+        danmakuOn: true,
+        candidateUrls: urls,
+        candidateIndex: 0,
+        ...(urls[0] && urls[0] !== source.url ? { source: { ...source, url: urls[0] } } : {}),
+      };
     }),
 
   close: () =>
@@ -106,6 +119,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setQualityQn: (qualityQn) => set({ qualityQn }),
   setSeekTarget: (seekTarget) => set({ seekTarget }),
   toggleDanmaku: () => set((s) => ({ danmakuOn: !s.danmakuOn })),
+  nextCandidate: () => {
+    let switched = false;
+    set((s) => {
+      if (!s.source || s.candidateIndex + 1 >= s.candidateUrls.length) return {};
+      const nextIdx = s.candidateIndex + 1;
+      switched = true;
+      return {
+        candidateIndex: nextIdx,
+        source: { ...s.source, url: s.candidateUrls[nextIdx] },
+        state: 'loading',
+        error: '',
+        position: 0,
+        duration: 0,
+      };
+    });
+    return switched;
+  },
 }));
 
 export default usePlayerStore;

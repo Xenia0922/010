@@ -15,6 +15,8 @@ interface Props extends PlayerScreenProps {
   inline?: boolean;
   /** 视频实际尺寸回调（气泡/列表按内容比例自适应容器） */
   onVideoSize?: (w: number, h: number) => void;
+  /** 外部续播位置（秒；如 MediaScreen 的 webResumeTime），优先于内部 position */
+  resumeAt?: number;
 }
 
 /**
@@ -31,7 +33,7 @@ interface Props extends PlayerScreenProps {
  *   onClose={() => ...}
  * />
  */
-export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false, onVideoSize }: Props) {
+export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false, onVideoSize, resumeAt }: Props) {
   const openedFor = useRef('');
   const sourceUrl = source.url || '';
   const fullscreen = usePlayerStore((s) => s.fullscreen);
@@ -52,7 +54,7 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
 
   const content = (
     <View style={[styles.container, inline && !fullscreen ? styles.inline : null]}>
-      <PlayerCore onVideoSize={onVideoSize} />
+      <PlayerCore onVideoSize={onVideoSize} resumeAt={resumeAt} />
       {children}
       <PlayerChrome features={features} extraActions={extraActions} onClose={onClose} inline={inline} />
       <FullscreenManager />

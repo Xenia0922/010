@@ -16,12 +16,12 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import Video from 'react-native-video';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSettingsStore } from '../store';
 import { setPipPlaying, setPipAspect } from '../utils/pip';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
+import PlayerScreen from '../player';
 import { FadeInView, ScalePressable } from '../components/Motion';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
@@ -38,8 +38,6 @@ import { DanmakuItem } from '../utils/danmaku';
 import { errorMessage, normalizeUrl } from '../utils/data';
 import { NetworkImage } from '../components/NetworkImage';
 import { setLiveImmersiveMode } from '../native/LivePlayer';
-import { getPlayerHtml } from '../components/media/player';
-import { PlayerTopBar, PlayerBottomBar, PlayerMorePanel } from '../components/media/PlayerChrome';
 import { usePalette } from '../theme';
 import type { Palette } from '../theme/colors';
 import { useI18n } from '../i18n';
@@ -420,125 +418,49 @@ export default function BilibiliLiveScreen() {
   }
 
   if (streamUrl) {
+    /* 统一播放器（重写）：B站直播 → PlayerScreen
+       - 候选线路：urls 传全部线路，失败自动切下一线路（PlayerCore 内置）
+       - 画质/弹幕设置/下一线路：extraActions（更多面板）
+       - B站弹幕：children 插槽挂 DanmakuOverlay（WebSocket 数据源保留在页面）
+       - 音量补偿 volume 1.5（B站流响度低） */
     return (
       <View style={styles.playerPage}>
-        <View style={styles.player}>
-          {useWebPlayer ? (
-            <WebView
-              source={{ html: getPlayerHtml(streamUrl, undefined, 0, false) }}
-              style={styles.nativeVideo}
-              javaScriptEnabled
-              domStorageEnabled
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              mixedContentMode="always"
-              allowsFullscreenVideo
-            />
-          ) : (
-            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-              <View style={{ width: videoBoxW, height: videoBoxH, transform: [{ rotate: videoRotateDeg }] }}>
-                <Video
-                  ref={videoRef}
-                  key={streamUrl}
-                  source={{
-                    uri: streamUrl,
-                    headers: bilibiliApi.headers(currentCandidate?.realRoomId),
-                  }}
-                  style={styles.nativeVideo}
-                  resizeMode="contain"
-                  paused={paused}
-                  ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-                  // B 站直播流音频响度普遍低于口袋流：Android ExoPlayer 侧做 1.5x 线性增益补偿
-                  volume={1.5}
-                  onLoad={(e: any) => {
-                    setPlayerError('');
-                    setBuffering(false);
-                    videoRef.current?.resume?.();
-                    // 同步 PiP 窗口比例（切后台悬浮窗跟随直播流方向）
-                    const ns = e?.naturalSize;
-                    if (ns && Number(ns.width) > 0 && Number(ns.height) > 0) setPipAspect(ns.width, ns.height);
-                  }}
-                  onBuffer={(e: any) => setBuffering(!!e?.isBuffering)}
-                  onError={(event) => {
-                    const detail = JSON.stringify(event?.error || event).slice(0, 180);
-                    setBuffering(false);
-                    switchToNextCandidate(t('原生播放器失败：{detail}', { detail }));
-                  }}
-                />
-              </View>
-            </View>
-          )}
-          {/* 缓冲/加载黑屏期：转圈提示，避免「黑屏无反馈」 */}
-          {buffering ? (
-            <View style={styles.bufferingWrap} pointerEvents="none">
-              <ActivityIndicator color="#ffffff" size="large" />
-              <Text style={styles.bufferingText}>{t('加载直播流…')}</Text>
-            </View>
-          ) : null}
-          {playerError ? (
-            <View style={styles.playerError}>
-              <Text style={styles.playerErrorText}>{playerError}</Text>
-              <View style={styles.playerActions}>
-                <TouchableOpacity activeOpacity={0.7} style={[styles.webFallbackBtn, { backgroundColor: palette.tint }]} onPress={() => setUseWebPlayer(true)}>
-                  <Text style={[styles.webFallbackText, { color: palette.onTint }]}>{t('网页播放器')}</Text>
-                </TouchableOpacity>
-                {safeIndex + 1 < visibleCandidates.length ? (
-                  <TouchableOpacity activeOpacity={0.7} style={[styles.webFallbackBtn, { backgroundColor: palette.tint }]} onPress={() => setCandidateIndex((prev) => prev + 1)}>
-                    <Text style={[styles.webFallbackText, { color: palette.onTint }]}>{t('下一线路')}</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-          ) : null}
-        </View>
-
-        {/* B站直播弹幕：实时滚动（live 模式立即上屏） */}
-        <DanmakuOverlay
-          danmaku={dmItems}
-          currentTime={dmTick}
-          visible={showDanmaku && !!streamUrl}
-          live
-        />
-
-        {/* 全屏点击层：始终可点，用于切换控制栏显隐。
-            zIndex 20 低于控制栏(30)、高于视频(0)；控制栏可见时按钮优先接收点击，
-            隐藏时(pointerEvents none)点击穿透到本层 → 重新唤出。 */}
-        <TouchableWithoutFeedback onPress={toggleControls}>
-          <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 20 }]} />
-        </TouchableWithoutFeedback>
-
-        {/* 哔哩哔哩风格顶栏：返回 / 标题 / 更多（仅右上角） */}
-        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, opacity: controlsOpacity, pointerEvents: controlsVisible ? 'box-none' : 'none', zIndex: 30 }]}>
-          <PlayerTopBar
-            onBack={closePlayer}
-            title={streamTitle || t('B站直播')}
-            subtitle={visibleCandidates.length > 1
-              ? t('线路 {index}/{total} · {format}', { index: safeIndex + 1, total: visibleCandidates.length, format: currentCandidate?.formatName || 'unknown' })
-              : (qualityLabel || undefined)}
-            onMore={() => setMoreVisible(true)}
-            onRefresh={() => activeRoom && startWatch(activeRoom)}
-            onMini={handleMiniPlayer}
+        <PlayerScreen
+          source={{
+            kind: 'live',
+            url: streamUrl,
+            urls: visibleCandidates.map((c) => c.url),
+            headers: bilibiliApi.headers(currentCandidate?.realRoomId),
+            volume: 1.5,
+          }}
+          meta={{ title: streamTitle || t('B站直播') }}
+          features={{ kernelSwitch: true, danmaku: true }}
+          extraActions={[
+            ...(qualities.length > 1
+              ? qualities.map((q) => ({
+                  key: `qn-${q.qn}`,
+                  icon: 'high-definition-box',
+                  label: q.label,
+                  active: qualityQn === q.qn,
+                  onPress: () => pickQuality(q.qn),
+                }))
+              : []),
+            { key: 'dmsettings', icon: 'cog-outline', label: t('弹幕设置'), onPress: () => setShowDmSettings(true) },
+            ...(safeIndex + 1 < visibleCandidates.length
+              ? [{ key: 'next', icon: 'playlist-check', label: t('下一线路'), onPress: () => setCandidateIndex((prev) => Math.min(prev + 1, visibleCandidates.length - 1)) }]
+              : []),
+          ]}
+          onClose={closePlayer}
+          persistent
+        >
+          {/* B站直播弹幕：实时滚动（live 模式立即上屏） */}
+          <DanmakuOverlay
+            danmaku={dmItems}
+            currentTime={dmTick}
+            visible={showDanmaku && !!streamUrl}
+            live
           />
-        </Animated.View>
-
-        {/* 哔哩哔哩风格底部控制坞：播放 · 直播标识 · 弹幕 · 画质 · 横屏 */}
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, opacity: controlsOpacity, pointerEvents: controlsVisible ? 'auto' : 'none', zIndex: 30 }]}>
-          <PlayerBottomBar
-            isLive
-            paused={paused}
-            currentTime={0}
-            duration={0}
-            hideLiveChip
-            showDanmaku
-            danmakuOn={showDanmaku}
-            onToggleDanmaku={() => setShowDanmaku((v) => !v)}
-            qualityLabel={qualityLabel || (qualities.length ? qualities[0].label : undefined)}
-            onPickQuality={qualities.length > 1 ? () => setMoreVisible(true) : undefined}
-            onTogglePlay={() => setPaused((p) => !p)}
-            onSeek={() => {}}
-            onRotate={() => setIsLandscape((v) => !v)}
-          />
-        </Animated.View>
+        </PlayerScreen>
 
         {/* 登录画质提示：未登录时一次性告知（区别于换流提示，仅画质相关） */}
         {qualityHint ? (
@@ -549,27 +471,6 @@ export default function BilibiliLiveScreen() {
             </View>
           </Animated.View>
         ) : null}
-
-        <PlayerMorePanel
-          visible={moreVisible}
-          onClose={() => setMoreVisible(false)}
-          title={t('播放器功能')}
-          items={[
-            ...(qualities.length > 1
-              ? qualities.map((q) => ({
-                  key: `qn-${q.qn}`,
-                  icon: 'high-definition-box' as const,
-                  label: q.label,
-                  active: qualityQn === q.qn,
-                  onPress: () => pickQuality(q.qn),
-                }))
-              : []),
-            { key: 'danmaku', icon: showDanmaku ? 'comment-text' : 'comment-text-outline', label: t('弹幕'), active: showDanmaku, onPress: () => setShowDanmaku((v) => !v) },
-            { key: 'dmsettings', icon: 'cog-outline', label: t('弹幕设置'), onPress: () => setShowDmSettings(true) },
-            { key: 'web', icon: useWebPlayer ? 'cellphone' : 'web', label: useWebPlayer ? t('原生') : t('网页'), onPress: () => setUseWebPlayer((p) => !p), active: useWebPlayer },
-            ...(safeIndex + 1 < visibleCandidates.length ? [{ key: 'next', icon: 'playlist-check' as const, label: t('下一线路'), onPress: () => setCandidateIndex((prev) => Math.min(prev + 1, visibleCandidates.length - 1)) }] : []),
-          ]}
-        />
 
         <DanmakuSettingsSheet visible={showDmSettings} onClose={() => setShowDmSettings(false)} />
       </View>

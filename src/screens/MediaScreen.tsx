@@ -24,7 +24,6 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import Video from 'react-native-video';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { RouteProp, useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -40,13 +39,12 @@ import { errorMessage, normalizeUrl, pickText, unwrapList } from '../utils/data'
 import { getResumePosition, saveResumePosition, clearResumePosition } from '../utils/resumePosition';
 import { logWarn } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
-import { getPlayerHtml } from '../components/media/player';
-import { LiveExoView, setLiveImmersiveMode } from '../native/LivePlayer';
+import { setLiveImmersiveMode } from '../native/LivePlayer';
+import PlayerScreen from '../player';
 import { DanmakuOverlay } from '../components/DanmakuOverlay';
 import DanmakuSettingsSheet from '../components/DanmakuSettingsSheet';
 import { parseDanmaku, DanmakuItem } from '../utils/danmaku';
 import { memberSearchText } from '../utils/members';
-import { PlayerTopBar, PlayerBottomBar, PlayerMorePanel, MoreItem } from '../components/media/PlayerChrome';
 import { CenterSpinner } from '../components/Loaders';
 import { EmptyState } from '../components/StateViews';
 import { LoginPrompt } from '../components/LoginPrompt';
@@ -1510,25 +1508,6 @@ export default function MediaScreen() {
   if (playing) {
     return (
       <View style={[styles.playerPage, isFullscreen && styles.playerPageFullscreen]}>
-        {/* 全屏点击层：始终可点，用于切换控制栏显隐。
-            zIndex 20 低于控制栏(30)、高于视频(0)，故：
-            - 控制栏可见时，其按钮(z30)优先接收点击；
-            - 控制栏隐藏时(pointerEvents none)点击穿透到本层 → 重新唤出。
-            用 TouchableWithoutFeedback 而非 responder，规避原生 Video 吞触摸导致「隐藏后再也唤不回」的 bug。 */}
-        <TouchableWithoutFeedback onPress={toggleControls}>
-          <View style={[StyleSheet.absoluteFill, { zIndex: 20 }]} />
-        </TouchableWithoutFeedback>
-
-        <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, opacity: controlsOpacity, pointerEvents: controlsVisible ? 'box-none' : 'none', zIndex: 30 }]}>
-          <PlayerTopBar
-            onBack={isFullscreen ? () => setIsFullscreen(false) : closePlayer}
-            title={playing.title || (playing.isLive ? t('口袋直播') : t('回放'))}
-            onMore={() => setMoreVisible(true)}
-            onRefresh={() => startPlay(playing.item)}
-            onMini={handleMiniPlayer}
-          />
-        </Animated.View>
-
         {announceExpanded && announceVisible && announcement ? (
           <Animated.View style={[styles.announcePanel, { transform: [{ translateY: announceTopAnim }] }]}>
             <View style={styles.announcePanelTop}>
@@ -1571,122 +1550,42 @@ export default function MediaScreen() {
               </View>
             )}
           </View>
-        ) : playing.needsVlc && Platform.OS === 'android' && LiveExoView ? (
-          <View style={styles.player}>
-            <LiveExoView
-              style={styles.nativeVideo}
-              url={playing.url}
-              onError={(e) => {
-                // 原生重试耗尽（RTMP/FLV 断流或不可达）→ 提供重试/切换网页播放器入口
-                const msg = String(e?.nativeEvent?.message || '');
-                setPlayerError(t('直播播放失败：{detail}', { detail: msg.slice(0, 160) || t('无法连接直播源') }));
-              }}
-            />
-            {playerError ? (
-              <View style={styles.playerError}>
-                <Text style={styles.playerErrorText}>{playerError}</Text>
-                <TouchableOpacity style={[styles.webFallbackBtn, { backgroundColor: palette.tint }]} onPress={() => { setUseWebPlayer(true); setPaused(false); }}>
-                  <Text style={styles.webFallbackText}>{t('切换网页播放器')}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </View>
-        ) : useWebPlayer ? (
-          <WebView
-            source={{ html: getPlayerHtml(playing.url, playing.cover, webResumeTime) }}
-            style={styles.player}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            allowsFullscreenVideo
-            onMessage={(e) => {
-              try {
-                const data = JSON.parse(e.nativeEvent.data);
-                if (!playing?.url) return;
-                if (data.type === 'progress') {
-                  const t = Number(data.time) || 0;
-                  saveResumePosition(resumeKey, t);
-                  setPlaybackTime(t); // 校正弹幕时间轴，消除插值漂移
-                } else if (data.type === 'ended') clearResumePosition(resumeKey);
-              } catch {}
-            }}
-            onError={(syntheticEvent) => {
-              const detail = String(syntheticEvent?.nativeEvent?.description || '');
-              setPlayerError(t('网页播放器加载失败：{detail}', { detail: detail.slice(0, 180) || t('无法加载页面') }));
-            }}
-          />
         ) : (
-          <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-            <View style={{ width: videoBoxW, height: videoBoxH, transform: [{ rotate: videoRotateDeg }] }}>
-              <Video
-                ref={videoRef}
-                source={playerSource(playing.url)}
-                style={styles.nativeVideo}
-                resizeMode="contain"
-                paused={paused}
-                rate={playbackRate}
-                progressUpdateInterval={250}
-                ignoreSilentSwitch="ignore" playInBackground playWhenInactive
-                onLoad={(e) => { setDuration(e.duration || 0); setPlaybackTime(webResumeTime || 0); setPlayerError(''); autoOrient(e); }}
-                onProgress={(e) => { if (Date.now() < seekLockRef.current) return; if (!paused) setPlaybackTime(e.currentTime || 0); }}
-                onEnd={() => { clearResumePosition(resumeKey); setPipPlaying(false); }}
-                onError={(event) => setPlayerError(t('原生播放器失败：{detail}', { detail: JSON.stringify(event?.error || event).slice(0, 220) }))}
-              />
-              {playerError ? (
-                <View style={styles.playerError}>
-                  <Text style={styles.playerErrorText}>{playerError}</Text>
-                  <TouchableOpacity style={[styles.webFallbackBtn, { backgroundColor: palette.tint }]} onPress={() => { setUseWebPlayer(true); setPaused(false); }}>
-                    <Text style={styles.webFallbackText}>{t('切换网页播放器')}</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-          </View>
+          /* 统一播放器（重写）：口袋直播/录播 → PlayerScreen
+             - 内核路由：rtmp/flv → Exo / HLS/mp4 → Native / 失败可切 Web（flv.js+hls.js）
+             - 候选线路 urls：失败自动切下一候选
+             - 弹幕：children 插槽挂 DanmakuOverlay（poll/LRC 数据源保留在页面）
+             - 倍速/续播/内核切换/礼物/贡献榜/公告/弹幕设置全部经 features + extraActions */
+          <PlayerScreen
+            source={{
+              kind: playing.isLive ? 'live' : 'vod',
+              url: playing.url,
+              urls: playing.urls,
+              liveId: String(playing.item?.liveId || playing.item?.id || ''),
+              needsNativeExo: playing.needsVlc,
+              headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/', Origin: 'https://h5.48.cn' },
+            }}
+            meta={{ title: playing.title, cover: playing.cover }}
+            danmaku={playing.isLive ? { type: 'poll', liveId: String(playing.item?.liveId || playing.item?.id || '') } : { type: 'lrc', lrcUrl: '' }}
+            features={{ rate: !playing.isLive, danmaku: true, kernelSwitch: true, resume: !playing.isLive }}
+            resumeAt={webResumeTime}
+            extraActions={[
+              ...(playing.isLive ? [{ key: 'gift', icon: 'gift', label: t('礼物'), onPress: () => openGiftPanel() }] : []),
+              { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: () => openRankPanel() },
+              ...((announceVisible && announcement) ? [{ key: 'announce', icon: 'bullhorn', label: t('公告'), active: announceExpanded, onPress: () => setAnnounceExpanded((v) => !v) }] : []),
+              { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
+            ]}
+            onClose={() => { setPipPlaying(false); setPlaying(null); }}
+            persistent
+          >
+            <DanmakuOverlay
+              danmaku={danmaku}
+              currentTime={playbackTime}
+              visible={showDanmaku && !!playing}
+              live={!!playing?.isLive}
+            />
+          </PlayerScreen>
         )}
-
-        <DanmakuOverlay
-          danmaku={danmaku}
-          currentTime={playbackTime}
-          visible={showDanmaku && !!playing}
-          live={!!playing?.isLive}
-        />
-
-        {/* 底部控制坞：哔哩哔哩风格单排（播放 · 进度 · 弹幕 · 倍速 · 翻转 · 全屏 · 更多），口袋专属功能收进「更多」 */}
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, opacity: controlsOpacity, pointerEvents: controlsVisible ? 'auto' : 'none', zIndex: 30 }]}>
-          <PlayerBottomBar
-            isLive={!!playing.isLive}
-            paused={paused}
-            currentTime={playbackTime}
-            duration={duration}
-            elapsed={playing.isLive ? playbackTime : undefined}
-            showDanmaku={!useWebPlayer}
-            danmakuOn={showDanmaku}
-            onToggleDanmaku={() => setShowDanmaku((v) => !v)}
-            showRate={!playing.isLive && !useWebPlayer && !playing.needsVlc}
-            rate={playbackRate}
-            onCycleRate={() => setPlaybackRate((r) => (r === 1 ? 1.5 : r === 1.5 ? 2 : 1))}
-            onTogglePlay={() => setPaused((p) => !p)}
-            onSeek={(t) => { setPlaybackTime(t); seekLockRef.current = Date.now() + 500; if (videoRef.current && videoRef.current.seek) videoRef.current.seek(t); }}
-            onRotate={() => { manualOrientRef.current = true; setIsLandscape((v) => !v); }}
-          />
-        </Animated.View>
-
-        <PlayerMorePanel
-          visible={moreVisible}
-          onClose={() => setMoreVisible(false)}
-          title={t('播放器功能')}
-          items={[
-            ...(playing.isLive ? [{ key: 'gift', icon: 'gift', label: t('礼物'), onPress: () => openGiftPanel() }] : []),
-            { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: () => openRankPanel() },
-            ...((announceVisible && announcement) ? [{ key: 'announce', icon: 'bullhorn', label: t('公告'), active: announceExpanded, onPress: () => setAnnounceExpanded((v) => !v) }] : []),
-            { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
-            // C4 修复：原生 <-> 网页播放器内核互切（此前只能单向切换网页后无法切回）
-            { key: 'kernel', icon: 'monitor', label: useWebPlayer ? t('切回原生播放器') : t('切换网页播放器'), onPress: () => { setUseWebPlayer((v) => !v); setPaused(false); setPlayerError(''); } },
-          ]}
-        />
 
         <Modal visible={giftVisible} transparent animationType="slide" onRequestClose={() => setGiftVisible(false)}>
           <View style={styles.modalShade}>

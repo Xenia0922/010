@@ -15,6 +15,8 @@ export interface PlayerSource {
   needsNativeExo?: boolean;
   /** 纯音频渲染（房间语音/上麦/电台） */
   audioOnly?: boolean;
+  /** 音量（B站流响度补偿 1.5 等） */
+  volume?: number;
 }
 
 export interface PlayerMeta {
