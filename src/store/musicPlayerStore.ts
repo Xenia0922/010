@@ -83,6 +83,8 @@ interface MusicPlayerState {
   error: string | null;
   // Favorites (persisted)
   favorites: string[];
+  /** 全屏播放器显隐（B1 全局化：迷你条/全屏挂 navigation 层，此状态全局可见） */
+  fullscreenVisible: boolean;
   /**
    * Seek 指令：组件写，Video onLoad / effect 检测后执行 seek 并清零。
    * 不持久化（持久化 seek 位置通过 position 字段实现）。
@@ -106,6 +108,7 @@ interface MusicPlayerState {
   setSeekTarget: (t: number) => void;
   isFavorite: (id: string) => boolean;
   toggleFavorite: (id: string) => void;
+  setFullscreenVisible: (v: boolean) => void;
   next: () => Track | null;
   prev: () => Track | null;
 }
@@ -130,6 +133,7 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       lyrics: [],
       error: null,
       favorites: [],
+      fullscreenVisible: false,
       seekTarget: 0,
 
       setQueue: (tracks) => set({ queue: tracks, currentIndex: tracks.length > 0 ? 0 : -1 }),
@@ -151,8 +155,10 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       clearQueue: () => set({ queue: [], currentIndex: -1 }),
 
       /**
-       * 载入曲目到队列并置为 loading 态，但不写 url —— url 由 MusicEngine 异步解析后
-       * 通过 setUrl 单独写入，从而避免 Video 经历 url:'' → url:http 的 source 翻转。
+       * 载入曲目到队列并置为 loading 态，但暂不写新 url —— url 由 MusicEngine 异步解析后
+       * 通过 setUrl 单独写入。B2 修复：**保留旧 url**（不置空），Video 常驻下始终有合法 source，
+       * 消除「url:'' → 新 url」空源翻转导致的偶发 onError/黑屏/误触发跳歌。
+       * loading 态 paused=true，旧画面/旧音不发声，解析完成后 setUrl 切换。
        *
        * keepPosition=true（主页「继续播放」/ 记忆恢复）：保留当前 position 并把其转成
        * seekTarget，等 Video onLoad 就绪后 seek 回去 —— 否则 play() 会把进度清零，
@@ -166,7 +172,7 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
           queue: q,
           currentIndex: idx >= 0 ? idx : 0,
           playbackState: 'loading',
-          url: '',            // 暂空，等 setUrl 写入后 Video 挂载一次即稳定
+          url: s.url,           // B2：保留旧 url（不置空），消除空 source 翻转
           duration: resumePos > 0 ? s.duration : 0,
           position: resumePos,
           lyrics: [],
@@ -190,15 +196,35 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       setError: (error) => set({ error, playbackState: error ? 'error' : 'idle' }),
 
       setSeekTarget: (seekTarget) => set({ seekTarget }),
+      setFullscreenVisible: (fullscreenVisible) => set({ fullscreenVisible }),
 
-      isFavorite: (id) => get().favorites.includes(id),
+      /**
+       * B7 收藏键归一：收藏统一存 `title|artist` 键（旧数据仍为 musicId，双兼容）——
+       * 官方曲（数字 musicId）与 R2 曲（R2- 前缀）同一首歌共享同一收藏，换源不再"丢收藏"。
+       */
+      isFavorite: (id) => {
+        const f = get().favorites;
+        if (f.includes(id)) return true;
+        const t = get().queue.find((x) => String(x.musicId || x.id) === String(id));
+        if (t) {
+          const k = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
+          if (k && k !== '|' && f.includes(k)) return true;
+        }
+        return false;
+      },
 
       toggleFavorite: (id) => set((s) => {
         if (!id) return s;
+        const t = s.queue.find((x) => String(x.musicId || x.id) === String(id));
+        const k = t ? `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim() : '';
+        const key = k && k !== '|' ? k : id;
         if (s.favorites.includes(id)) {
           return { favorites: s.favorites.filter((f) => f !== id) };
         }
-        return { favorites: [...s.favorites, id] };
+        if (s.favorites.includes(key)) {
+          return { favorites: s.favorites.filter((f) => f !== key) };
+        }
+        return { favorites: [...s.favorites, key] };
       }),
 
       next: () => {

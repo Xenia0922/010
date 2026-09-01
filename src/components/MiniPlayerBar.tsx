@@ -159,7 +159,9 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const handleNext = useCallback(() => { try { MusicEngine.next(); } catch {} }, []);
   const handleMode = useCallback(() => { try { MusicEngine.cycleMode(); } catch {} }, []);
 
-  if (!track || playbackState === 'idle' || !isPlayableHost(playUrl)) return null;
+  // B3 修复：显隐仅由「有曲目且非 idle」决定——url 未就绪（R2 FLAC 解析慢/记忆恢复）
+  // 时 bar 保持可见（按钮由 handleToggle 内的 isPlayableHost 保护），不再闪烁消失
+  if (!track || playbackState === 'idle') return null;
 
   return (
     <Animated.View

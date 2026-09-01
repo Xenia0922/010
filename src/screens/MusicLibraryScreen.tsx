@@ -23,8 +23,6 @@ import { logError } from '../utils/runtimeLog';
 import { formatTimestamp, joinMeta } from '../utils/format';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
-import MiniPlayerBar from '../components/MiniPlayerBar';
-import FullScreenPlayer from '../components/FullScreenPlayer';
 import CoverArt from '../components/CoverArt';
 import { Skeleton } from '../components/Skeleton';
 import { EmptyState, ErrorState } from '../components/StateViews';
@@ -109,14 +107,13 @@ export default function MusicLibraryScreen() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [showFullScreen, setShowFullScreen] = useState(false);
   const loadingRef = useRef(false);
   const videoRef = useRef<any>(null);
 
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
-    if (group === 'FAV') list = list.filter(item => favorites.includes(String(item.musicId || item.id || '')));
+    if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')));
     else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
@@ -140,16 +137,17 @@ export default function MusicLibraryScreen() {
         const err = (officialRes as PromiseRejectedResult).reason || (r2Res as PromiseRejectedResult).reason;
         throw err instanceof Error ? err : new Error('音乐列表加载失败');
       }
-      // 官方源优先：title+artist 同键时保留官方曲目，R2 仅补充官方缺失的（多为公演音频）
+      // 官方源优先：title+artist+album 同键时保留官方曲目，R2 仅补充官方缺失的。
+      // B6：去重键加 album —— 同一首歌的不同专辑/公演版本（官方版 vs R2 公演版）不再被吞
       const seen = new Set<string>();
       const merged: any[] = [];
       official.forEach((t: any) => {
-        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
+        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
         seen.add(key);
         merged.push(t);
       });
       r2.forEach((t: any) => {
-        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
+        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
         if (seen.has(key)) return;
         seen.add(key);
         merged.push(t);
@@ -215,19 +213,19 @@ export default function MusicLibraryScreen() {
     const cur = st.queue[st.currentIndex];
     const sameAsCurrent = !!cur && (cur.musicId || cur.id) === (item.musicId || item.id);
     if (sameAsCurrent && st.playbackState === 'playing') {
-      setShowFullScreen(true);
+      useMusicPlayerStore.getState().setFullscreenVisible(true);
       return;
     }
     // 同一首（记忆恢复/暂停中）：走 resume 保留进度续播，而不是 playTrack 从 0 开始
     if (sameAsCurrent && st.position > 0) {
       MusicEngine.resume();
-      setShowFullScreen(true);
+      useMusicPlayerStore.getState().setFullscreenVisible(true);
       return;
     }
     // 克隆队列：播放器 store 与列表 songs 解耦，避免共享同一批对象引用时，
     // 任何播放态写入（或 FlatList 复用）反噬列表渲染。
     MusicEngine.playTrack(item, filteredSongs.map((t) => ({ ...t })));
-    setShowFullScreen(true);
+    useMusicPlayerStore.getState().setFullscreenVisible(true);
   };
 
   return (
@@ -440,6 +438,14 @@ export default function MusicLibraryScreen() {
               if (videoRef.current && typeof videoRef.current.seek === 'function') {
                 try { videoRef.current.seek(0); } catch (err) { console.warn('[MusicLibraryScreen] loop seek error:', err); }
               }
+              // B4 兜底：部分 ROM ended 态 seek(0) 后不自动恢复播放 → 800ms 后仍停在起点则暂停/恢复翻转一次
+              setTimeout(() => {
+                const st = useMusicPlayerStore.getState();
+                if (st.playbackState === 'playing' && st.position <= 0.5) {
+                  st.setPlaybackState('paused');
+                  setTimeout(() => st.setPlaybackState('playing'), 60);
+                }
+              }, 800);
             } else {
               MusicEngine.next();
             }
@@ -469,8 +475,6 @@ export default function MusicLibraryScreen() {
           }
         }}
       />
-      <MiniPlayerBar onOpenFullScreen={() => setShowFullScreen(true)} />
-      <FullScreenPlayer visible={showFullScreen} onClose={() => setShowFullScreen(false)} />
     </View>
   );
 }
