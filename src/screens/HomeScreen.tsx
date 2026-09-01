@@ -169,6 +169,17 @@ function SectionHeader({ title, action_label, onAction }: { title: string; actio
 function LiveBanner({ item, onPress }: { item: LiveCardItem; onPress: () => void }) {
   const palette = usePalette();
   const [broken, setBroken] = useState(false);
+  const retriedRef = useRef(false);
+  // B3 修复：封面失败 3s 后自动重试一次（封面 URL 偶发 403/超时），再次失败才保持兜底
+  const handleCoverError = () => {
+    if (!retriedRef.current) {
+      retriedRef.current = true;
+      setBroken(true);
+      setTimeout(() => setBroken(false), 3000);
+    } else {
+      setBroken(true);
+    }
+  };
   return (
     <ScalePressable style={styles.liveBanner} onPress={onPress} pressedScale={0.98}>
       <View style={[styles.liveBannerWrap, { backgroundColor: palette.fill3, borderColor: palette.hairline, borderWidth: StyleSheet.hairlineWidth }]}>
@@ -177,17 +188,18 @@ function LiveBanner({ item, onPress }: { item: LiveCardItem; onPress: () => void
             source={{ uri: item.cover }}
             style={styles.liveBannerCover}
             resizeMode="cover"
-            onError={() => setBroken(true)}
+            fallback={false}
+            onError={handleCoverError}
           />
         ) : (
           <View style={styles.liveBannerFallback}>
             <MaterialCommunityIcons name="video" color={palette.labelTertiary} size={44} />
           </View>
         )}
-        {/* 底部平滑渐变（顶部透明 → 底部 0.58 黑），替代多层色阶遮罩 */}
+        {/* 底部平滑渐变（顶部透明 → 底部 0.68 黑），替代多层色阶遮罩；0.68 保证浅色封面下白字可读 */}
         <LinearGradient
           pointerEvents="none"
-          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.58)']}
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
           style={styles.liveBannerShade}
         />
         <View style={[styles.liveBadge, styles.liveBannerBadge]}>
@@ -414,28 +426,50 @@ export default function HomeScreen() {
     return () => { clearInterval(id); sub.remove(); };
   }, [fetchLives]);
 
-  // banner 轮播：2.5s 自动切换下一条（最多轮前 4 条），切换带 crossfade + 位移动画
+  // banner 轮播：2.5s 自动切换下一条（最多轮前 4 条），切换带 crossfade + 位移动画。
+  // B1 修复：与直播/公演 60s 轮询一致，仅前台运行时切换（后台不跑动画/不空转，回前台立即恢复）。
   const bannerCount = Math.min(4, lives.length);
   useEffect(() => {
     if (bannerCount <= 1) return;
-    const timer = setInterval(() => {
-      // 退场再入场
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-          Animated.timing(slideAnim, { toValue: 10, duration: 150, useNativeDriver: true }),
-        ]),
-        Animated.timing(fadeAnim, { toValue: 1, duration: 240, useNativeDriver: true }),
-      ]).start();
-      Animated.spring(slideAnim, { toValue: 0, speed: 26, bounciness: 5, useNativeDriver: true }).start();
-      setBannerIndex((i) => (i + 1) % bannerCount);
-    }, 2500);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const startLoop = () => {
+      if (timer) return;
+      timer = setInterval(() => {
+        if (AppState.currentState !== 'active') return;
+        // 退场再入场
+        Animated.sequence([
+          Animated.parallel([
+            Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+            Animated.timing(slideAnim, { toValue: 10, duration: 150, useNativeDriver: true }),
+          ]),
+          Animated.timing(fadeAnim, { toValue: 1, duration: 240, useNativeDriver: true }),
+        ]).start();
+        Animated.spring(slideAnim, { toValue: 0, speed: 26, bounciness: 5, useNativeDriver: true }).start();
+        setBannerIndex((i) => (i + 1) % bannerCount);
+      }, 2500);
+    };
+    const stopLoop = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+    };
+    startLoop();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') startLoop();
+      else stopLoop();
+    });
+    return () => { sub.remove(); stopLoop(); };
   }, [bannerCount, fadeAnim, slideAnim]);
+
+  // B2 修复：lives 数量变化（60s 轮询）后 bannerIndex 收敛到有效范围，避免 banner 突然消失
+  useEffect(() => {
+    if (bannerCount > 0) {
+      setBannerIndex((i) => Math.min(i, bannerCount - 1));
+    }
+  }, [bannerCount]);
 
   // 原子化订阅：queue 引用仅在队列变化时更新，position 高频写入不触发首页重渲染
   const musicQueue = useMusicPlayerStore((s) => s.queue);
   const musicIndex = useMusicPlayerStore((s) => s.currentIndex);
+  const musicPlaybackState = useMusicPlayerStore((s) => s.playbackState);
   const currentTrack = musicQueue[musicIndex] || null;
 
   const handleNav = useCallback((item: NavItem) => {
@@ -465,6 +499,12 @@ export default function HomeScreen() {
   const banner = lives[bannerIndex];
   const trackTitle = currentTrack?.title || '';
   const trackArtist = currentTrack?.joinMemberNames || currentTrack?.artist || '';
+  // F3 修复：续播卡随播放状态显示「播放中/加载中/继续播放」，R2 曲目 URL 异步解析时用户有反馈
+  const resumeLabel = musicPlaybackState === 'playing'
+    ? t('播放中')
+    : musicPlaybackState === 'loading'
+      ? t('加载中')
+      : t('继续播放');
 
   const openLive = useCallback((item: LiveCardItem) => {
     (navigation as any).navigate('Media', {
@@ -552,7 +592,13 @@ export default function HomeScreen() {
                   {bannerCount > 1 ? (
                     <View style={styles.bannerDots}>
                       {lives.slice(0, bannerCount).map((live, i) => (
-                        <AnimatedDots key={live.liveId} active={i === bannerIndex} color={palette.tint} idle={palette.fill3} />
+                        <AnimatedDots
+                          key={live.liveId}
+                          active={i === bannerIndex}
+                          color={palette.tint}
+                          idle={palette.fill3}
+                          onPress={() => setBannerIndex(i)}
+                        />
                       ))}
                     </View>
                   ) : null}
@@ -689,7 +735,7 @@ export default function HomeScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    <Pill label={t('继续播放')} accent onPress={handleResumeMusic} />
+                    <Pill label={resumeLabel} accent onPress={handleResumeMusic} />
                   </View>
                 </GlassCard>
               </ScalePressable>
@@ -740,7 +786,7 @@ export default function HomeScreen() {
 /** 指示点随动动画：膨胀 + 变色。
  *  外层固定等宽槽位（16）居中，保证 active 横条与其它小点的中心距均匀对齐；
  *  宽度动画用 JS driver（width 不支持 native driver，否则横竖屏/轮播切换时宽度错乱）。 */
-function AnimatedDots({ active, color, idle }: { active: boolean; color: string; idle: string }) {
+function AnimatedDots({ active, color, idle, onPress }: { active: boolean; color: string; idle: string; onPress?: () => void }) {
   const w = useRef(new Animated.Value(active ? 16 : 6)).current;
   const c = useRef(new Animated.Value(active ? 1 : 0)).current;
   useEffect(() => {
@@ -749,7 +795,7 @@ function AnimatedDots({ active, color, idle }: { active: boolean; color: string;
     c.setValue(active ? 1 : 0);
   }, [active, w, c]);
   return (
-    <View style={styles.dotSlot}>
+    <ScalePressable style={styles.dotSlot} onPress={onPress} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }} pressedScale={0.85} activeOpacity={0.7}>
       <Animated.View
         style={{
           height: 6,
@@ -761,7 +807,7 @@ function AnimatedDots({ active, color, idle }: { active: boolean; color: string;
           }),
         }}
       />
-    </View>
+    </ScalePressable>
   );
 }
 

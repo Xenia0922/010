@@ -5,6 +5,12 @@
   <uses-permission android:name="android.permission.VIBRATE"/>
   <!-- 后台播放：防止切后台后 CPU 睡眠中断音频/视频 -->
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  <!-- 电台前台保活服务：startForeground 必需（缺失会 SecurityException 闪退）；
+       mediaPlayback 是 Android 14+ 必填的前台服务类型 -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+  <!-- Android 13+ 通知权限：缺失时前台服务通知不显示（后台播放无通知栏控制/停止入口） -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -17,6 +23,9 @@
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
     <activity android:name=".LivePlayerActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:exported="false" android:hardwareAccelerated="true" android:launchMode="singleTop" android:screenOrientation="sensor"/>
+    <!-- 电台前台保活服务：纯音频模式下后台/锁屏续播 + 通知栏停止按钮 -->
+    <service android:name=".RadioForegroundService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback"/>
+    <receiver android:name=".RadioStopReceiver" android:exported="false"/>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait" android:supportsPictureInPicture="true" android:resizeableActivity="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

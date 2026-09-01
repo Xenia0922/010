@@ -47,6 +47,7 @@ import {
   unwrapList,
 } from '../utils/data';
 import { t, useI18n } from '../i18n';
+import { logInfo } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
 import ZoomImageModal from '../components/ZoomImageModal';
 import { LiveExoView, setLiveImmersiveMode } from '../native/LivePlayer';
@@ -58,6 +59,8 @@ type FollowedRoom = {
   memberId: string;
   member?: Member;
   lastMessage?: any;
+  /** 小房间（yklzId）最新消息，与大房间分开显示 */
+  lastSmallMessage?: any;
 };
 
 type RoomMode = 'big' | 'small';
@@ -384,14 +387,26 @@ function sortMessagesNewestFirst<T>(list: T[]): T[] {
   return list.slice().sort((a: any, b: any) => getMessageTime(b) - getMessageTime(a));
 }
 
+/**
+ * 大房间最新消息：只认 channelId===大房间 或 成员本人发言。
+ * 注意不能按 serverId 兜底——小房间与大房间共用 serverId，兜底会把小房间消息冒充大房间预览。
+ */
 function findLastMessage(messages: any[], member?: Member) {
   if (!member) return null;
+  const bigId = String(member.channelId || '');
   return messages.find((msg) => (
-    String(msg.channelId || '') === String(member.channelId || '')
-    || String(msg.channelId || '') === String(member.yklzId || '')
-    || String(msg.serverId || '') === String(member.serverId || '')
+    (bigId && String(msg.channelId || '') === bigId)
     || String(msg.userId || msg.ownerId || '') === String(member.id || '')
   ));
+}
+
+/** 小房间（yklzId）最新消息：只认 channelId 精确匹配小房间 */
+function findSmallLastMessage(messages: any[], member?: Member) {
+  if (!member) return null;
+  const ykid = String(member.yklzId || '');
+  if (!ykid || ykid === '0' || ykid === 'undefined') return null;
+  return messages.find((msg) => String(msg.channelId || '') === ykid)
+    || null;
 }
 
 function roomChannelId(member: Member, mode: RoomMode) {
@@ -1345,6 +1360,7 @@ export default function FollowedRoomsScreen() {
       setFollowed(followedMembers.map((item: any) => ({
         ...item,
         lastMessage: findLastMessage(lastMsgs, item.member),
+        lastSmallMessage: findSmallLastMessage(lastMsgs, item.member),
       })));
       // 上麦检测：扫描关注成员房间语音状态（静默，失败忽略）。结果写入 onMicStore 供
       // 房间列表「上麦中」徽标与房间内上麦按钮共用。
@@ -1355,6 +1371,7 @@ export default function FollowedRoomsScreen() {
           channelId: String(item.member?.channelId || ''),
           serverId: String(item.member?.serverId || ''),
           smallChannelId: String(item.member?.yklzId || ''),
+          state: String(item.member?.state || ''),
         }))
         .filter((m: any) => m.channelId);
       if (onMicInputs.length) useOnMicStore.getState().scan(onMicInputs);
@@ -1416,6 +1433,7 @@ export default function FollowedRoomsScreen() {
             channelId: String(item.member?.channelId || ''),
             serverId: String(item.member?.serverId || ''),
             smallChannelId: String(item.member?.yklzId || ''),
+            state: String(item.member?.state || ''),
           }))
           .filter((m: any) => m.channelId);
         if (onMicInputs.length) useOnMicStore.getState().scan(onMicInputs);
@@ -1432,7 +1450,11 @@ export default function FollowedRoomsScreen() {
       pocketApi.getLastMessages(queryIds).then((res: any) => {
         if (!active) return;
         const lastMsgs = unwrapList(res, ['content.lastMsgList', 'content.data', 'data', 'lastMsgList']);
-        setFollowed((prev) => prev.map((f) => ({ ...f, lastMessage: findLastMessage(lastMsgs, f.member) })));
+        setFollowed((prev) => prev.map((f) => ({
+          ...f,
+          lastMessage: findLastMessage(lastMsgs, f.member),
+          lastSmallMessage: findSmallLastMessage(lastMsgs, f.member),
+        })));
       }).catch(() => {});
     };
     const tick = () => { refreshLiveAndMic(); refreshLastMessages(); };
@@ -1446,6 +1468,8 @@ export default function FollowedRoomsScreen() {
   // mode: 'internal' = 同房间内切换大/小房间或成员/粉丝发言（同一成员，标题/背景不变，必须秒切、无骨架）
   //       'enter'    = 从房间列表点成员进入（跨成员/跨房间，保留骨架隔离旧房间残留）
   const openRoom = useCallback(async (room: Member, nextMode: RoomMode = 'big', includeFans = showFanMessages, mode: 'internal' | 'enter' = 'enter') => {
+    // D3：进房耗时诊断（runtimeLog 可查看；真机反馈卡顿时据此定位是消息接口慢还是渲染慢）
+    const roomOpenStart = Date.now();
     const channelId = roomChannelId(room, nextMode);
     if (!channelId) {
       showToast(nextMode === 'small' ? t('这个成员缺少小房间 channelId，无法打开小房间。') : t('这个成员缺少大房间 channelId，无法打开房间。'));
@@ -1499,6 +1523,7 @@ export default function FollowedRoomsScreen() {
       setRoomMessages(sorted);
       setRoomLoadedOnce(true);
       setRoomMsgError('');
+      logInfo(`[room] 进房 ${room.ownerName || channelId} ${nextMode} 消息加载耗时 ${Date.now() - roomOpenStart}ms (${sorted.length}条)`, 'room');
       const nextTime = getNextTime(res, list);
       setRoomNextTime(nextTime);
       setHasMoreMessages(nextTime > 0 && list.length > 0);
@@ -1818,8 +1843,10 @@ export default function FollowedRoomsScreen() {
       const mine = role === 'mine';
       const idol = role === 'idol';
       const msgProfile = senderProfile(item, room);
+      // 成员(idol)自己发言：优先用成员库最新头像（room.avatar），
+      // 服务端消息自带的 user.avatar 多为旧公式照（例：徐钰涵 2023 官方档案照 vs 库 2025 头像）
       const profile = idol
-        ? { id: room.id, name: (msgProfile.name || '').trim() || shortName(room), avatar: msgProfile.avatar || room.avatar }
+        ? { id: room.id, name: (msgProfile.name || '').trim() || shortName(room), avatar: room.avatar || msgProfile.avatar }
         : msgProfile;
       const media = roomMedia(item);
       const gift = roomGiftInfo(item);
@@ -2390,9 +2417,43 @@ export default function FollowedRoomsScreen() {
                     {team ? (
                       <Text style={[styles.roomTeam, { color: palette.labelTertiary }]} numberOfLines={1}>{team}</Text>
                     ) : null}
-                    <Text style={[styles.roomLast, { color: palette.labelSecondary }]} numberOfLines={1}>
-                      {lastText || t('点击查看房间消息')}
-                    </Text>
+                    {/* 最新消息：大/小房间分开显示（小房间有消息时第二条） */}
+                    {lastText ? (
+                      <View style={styles.lastRow}>
+                        <View style={[styles.lastTag, { backgroundColor: palette.tintSoft }]}>
+                          <Text style={[styles.lastTagText, { color: palette.tint }]}>{t('大')}</Text>
+                        </View>
+                        <Text style={[styles.roomLast, { color: palette.labelSecondary, marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                          {lastText}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.roomLast, { color: palette.labelSecondary }]} numberOfLines={1}>
+                        {t('点击查看房间消息')}
+                      </Text>
+                    )}
+                    {(() => {
+                      const sMsg = item.lastSmallMessage;
+                      if (!sMsg) return null;
+                      const sText = messageText(sMsg);
+                      if (!sText || sText === lastText) return null;
+                      const sTime = Number(sMsg?.msgTime || sMsg?.ctime || 0);
+                      return (
+                        <View style={styles.lastRow}>
+                          <View style={[styles.lastTag, { backgroundColor: palette.fill2 }]}>
+                            <Text style={[styles.lastTagText, { color: palette.labelSecondary }]}>{t('小')}</Text>
+                          </View>
+                          <Text style={[styles.roomLastSmall, { color: palette.labelTertiary }]} numberOfLines={1}>
+                            {sText}
+                          </Text>
+                          {sTime ? (
+                            <Text style={[styles.lastTimeSmall, { color: palette.labelTertiary }]} numberOfLines={1}>
+                              {formatTimestamp(sTime).slice(5, 16)}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })()}
                     <View style={styles.roomFoot}>
                       <Text style={[styles.roomTime, { color: palette.labelTertiary }]} numberOfLines={1}>
                         {lastTime ? formatTimestamp(lastTime).slice(5, 16) : ''}
@@ -2691,6 +2752,24 @@ const styles = StyleSheet.create({
   liveBadgeChipText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
   roomTeam: { fontSize: 11, marginTop: 3, fontWeight: '600' },
   roomLast: { fontSize: 12, marginTop: 4, lineHeight: 16 },
+  lastRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  lastTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 18,
+    height: 16,
+    borderRadius: 5,
+    marginRight: 6,
+    paddingHorizontal: 3,
+  },
+  lastTagText: { fontSize: 10, fontWeight: '800', lineHeight: 14 },
+  roomLastSmall: { fontSize: 11, lineHeight: 15, flex: 1 },
+  lastTimeSmall: { fontSize: 10, marginLeft: 6 },
   roomFoot: {
     flexDirection: 'row',
     alignItems: 'center',

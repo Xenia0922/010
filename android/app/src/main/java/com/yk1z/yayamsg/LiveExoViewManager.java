@@ -30,6 +30,11 @@ public class LiveExoViewManager extends SimpleViewManager<LiveExoView> {
     view.setUrl(url);
   }
 
+  @ReactProp(name = "audioOnly")
+  public void setAudioOnly(LiveExoView view, boolean audioOnly) {
+    view.setAudioOnly(audioOnly);
+  }
+
   @Override
   @Nullable
   public Map<String, Object> getExportedCustomBubblingEventTypeConstants() {
@@ -39,6 +44,11 @@ public class LiveExoViewManager extends SimpleViewManager<LiveExoView> {
             MapBuilder.of(
                 "phasedRegistrationNames",
                 MapBuilder.of("bubbled", "onSize", "captured", "onSizeCapture")))
+        .put(
+            LiveExoErrorEvent.EVENT_NAME,
+            MapBuilder.of(
+                "phasedRegistrationNames",
+                MapBuilder.of("bubbled", "onError", "captured", "onErrorCapture")))
         .build();
   }
 

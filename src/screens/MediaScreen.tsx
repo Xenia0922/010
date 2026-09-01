@@ -1573,7 +1573,23 @@ export default function MediaScreen() {
           </View>
         ) : playing.needsVlc && Platform.OS === 'android' && LiveExoView ? (
           <View style={styles.player}>
-            <LiveExoView style={styles.nativeVideo} url={playing.url} />
+            <LiveExoView
+              style={styles.nativeVideo}
+              url={playing.url}
+              onError={(e) => {
+                // 原生重试耗尽（RTMP/FLV 断流或不可达）→ 提供重试/切换网页播放器入口
+                const msg = String(e?.nativeEvent?.message || '');
+                setPlayerError(t('直播播放失败：{detail}', { detail: msg.slice(0, 160) || t('无法连接直播源') }));
+              }}
+            />
+            {playerError ? (
+              <View style={styles.playerError}>
+                <Text style={styles.playerErrorText}>{playerError}</Text>
+                <TouchableOpacity style={[styles.webFallbackBtn, { backgroundColor: palette.tint }]} onPress={() => { setUseWebPlayer(true); setPaused(false); }}>
+                  <Text style={styles.webFallbackText}>{t('切换网页播放器')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
         ) : useWebPlayer ? (
           <WebView
@@ -1667,6 +1683,8 @@ export default function MediaScreen() {
             { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: () => openRankPanel() },
             ...((announceVisible && announcement) ? [{ key: 'announce', icon: 'bullhorn', label: t('公告'), active: announceExpanded, onPress: () => setAnnounceExpanded((v) => !v) }] : []),
             { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
+            // C4 修复：原生 <-> 网页播放器内核互切（此前只能单向切换网页后无法切回）
+            { key: 'kernel', icon: 'monitor', label: useWebPlayer ? t('切回原生播放器') : t('切换网页播放器'), onPress: () => { setUseWebPlayer((v) => !v); setPaused(false); setPlayerError(''); } },
           ]}
         />
 

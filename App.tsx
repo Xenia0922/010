@@ -9,6 +9,9 @@ import { loadMembers } from './src/utils/members';
 import { fetchJson } from './src/utils/network';
 import { loadCachedMemberData } from './src/services/memberData';
 import { initWasm, WebViewSigner } from './src/auth';
+import { startRadioForeground, stopRadioForeground, onRadioStopRequested } from './src/native/LivePlayer';
+import { ensureNotificationPermission } from './src/utils/notifications';
+import { useMusicPlayerStore } from './src/store/musicPlayerStore';
 import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
 import { NOTICE_URL } from './src/constants';
@@ -53,6 +56,36 @@ function installGlobalErrorHandler() {
 
 installGlobalErrorHandler();
 initRuntimeLog().catch(() => {});
+
+/**
+ * 音乐前台保活桥（A2）：音乐库/全屏播放器播放时启动 RadioForegroundService
+ * （通知栏「停止」+ WAKE_LOCK，后台/锁屏续播、防进程被杀），停止播放时结束服务。
+ * 电台（RoomRadioScreen）自带前台服务，两路共用同一 Service，不会同时播放冲突。
+ */
+function MusicForegroundBridge() {
+  const playbackState = useMusicPlayerStore((s) => s.playbackState);
+  const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
+  useEffect(() => {
+    if (playbackState === 'playing') {
+      const track = useMusicPlayerStore.getState().queue[currentIndex];
+      ensureNotificationPermission().then(() => {
+        startRadioForeground(track?.title || '音乐');
+      });
+    } else if (playbackState === 'idle') {
+      stopRadioForeground();
+    }
+    // paused 保留前台服务（通知仍在，用户可一键停止）；error 由 MusicEngine 自动跳歌处理
+  }, [playbackState, currentIndex]);
+  // 通知栏「停止」→ 暂停音乐 + 结束前台服务
+  useEffect(() => onRadioStopRequested(() => {
+    stopRadioForeground();
+    const st = useMusicPlayerStore.getState();
+    if (st.playbackState === 'playing' || st.playbackState === 'paused') {
+      st.setPlaybackState('paused');
+    }
+  }), []);
+  return null;
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -240,6 +273,8 @@ export default function App() {
       )}
       {/* WebViewSigner 常驻挂载：即使 JS 开屏仍在显示，也提前预热签名模块。 */}
       <WebViewSigner />
+      {/* 音乐前台保活（后台播放通知栏控制 + 防进程被杀） */}
+      <MusicForegroundBridge />
     </>
   );
 }

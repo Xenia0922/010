@@ -4,6 +4,10 @@ import { requestJson, xhrPost, fetchWithTimeout } from '../utils/network';
 import { unwrapList, normalizeUrl } from '../utils/data';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// E2 记录：移动端 API 方法数少于桌面端 v2.11 通道（100+）——未移植的桌面通道：
+// 选举计分（score-*）、花漾（pageantry-*）、QR 登录（login-*-qr）、部分 Area48 话题接口；
+// 移动端无对应 UI，历史确认不在范围。新增接口时以桌面 pocket-runtime.mjs 为参数/头权威源。
+
 const BASE = 'https://pocketapi.48.cn';
 const APP_VERSION = '7.0.41';
 const APP_BUILD = '24011601';
@@ -600,6 +604,18 @@ export const pocketApi = {
   },
 
   async getNimLoginInfo() {
+    // E1：优先走桌面 v2.11 同款新通道 im/api/v1/im/userinfo（P-Sign-Type V0）——
+    // 官方云信凭证新接口，返回 content.accid/accId/imUserId + pwd/token/imPwd + userId；
+    // 失败再回退旧路径（user/info/reload / user/info/home）多路兜底，防旧接口下线后私信/签到失效。
+    try {
+      const res = await pocketPost(`${BASE}/im/api/v1/im/userinfo`, {}, {
+        headers: createCheckinHeaders(),
+        fallback: '获取云信凭证失败',
+      });
+      if (res?.content) return res;
+    } catch {
+      /* 落到旧多路兜底 */
+    }
     return tryPocketPost([
       {
         url: `${BASE}/user/api/v1/user/info/reload`,

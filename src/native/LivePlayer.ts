@@ -1,7 +1,7 @@
-import { NativeModules, Platform, requireNativeComponent, ViewProps } from 'react-native';
+import { DeviceEventEmitter, NativeModules, Platform, requireNativeComponent, ViewProps } from 'react-native';
 import { t } from '../i18n';
 
-const { LivePlayerModule } = NativeModules;
+const { LivePlayerModule, RadioServiceModule } = NativeModules;
 
 export interface LivePlayerOptions {
   liveId?: string;
@@ -43,5 +43,33 @@ export interface LiveSizeEventData {
 }
 
 export const LiveExoView = Platform.OS === 'android'
-  ? requireNativeComponent<ViewProps & { url: string; onSize?: (e: { nativeEvent: LiveSizeEventData }) => void }>('LiveExoView')
+  ? requireNativeComponent<ViewProps & {
+      url: string;
+      /** 纯音频模式：不渲染视频画面，仅解码音频（上麦/电台流） */
+      audioOnly?: boolean;
+      onSize?: (e: { nativeEvent: LiveSizeEventData }) => void;
+      /** 原生重试耗尽后回调：播放失败/断流（message 为失败原因） */
+      onError?: (e: { nativeEvent: { message: string } }) => void;
+    }>('LiveExoView')
   : null;
+
+/** 开播电台：启动前台保活服务（通知栏 + WAKE_LOCK，后台/锁屏续播） */
+export function startRadioForeground(title: string) {
+  if (Platform.OS === 'android' && RadioServiceModule?.begin) {
+    RadioServiceModule.begin(title || '');
+  }
+}
+
+/** 停播电台：结束前台保活服务并移除通知 */
+export function stopRadioForeground() {
+  if (Platform.OS === 'android' && RadioServiceModule?.end) {
+    RadioServiceModule.end();
+  }
+}
+
+/** 通知栏「停止」回调：返回解绑函数 */
+export function onRadioStopRequested(cb: () => void): () => void {
+  if (Platform.OS !== 'android') return () => {};
+  const sub = DeviceEventEmitter.addListener('RadioStopRequested', cb);
+  return () => sub.remove();
+}

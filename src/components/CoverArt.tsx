@@ -129,6 +129,7 @@ export default function CoverArt({ uri, title, size, fill, round, active }: Prop
           // scale：保留原图分辨率由 GPU 缩放，比 resize 预解码缩放更锐利（修复封面发糊）
           resizeMethod="scale"
           fadeDuration={200}
+          fallback={false}
           onLoad={() => setLoaded(true)}
           onError={handleImageError}
         />
