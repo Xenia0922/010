@@ -250,7 +250,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           onPress={() => { togglePlay(); }}
         >
           <View style={styles.centerPlayBtn}>
-            <MaterialCommunityIcons name="play" size={30} color="#fff" style={{ marginLeft: 3 }} />
+            <MaterialCommunityIcons name="play" size={26} color="#16181c" style={{ marginLeft: 4 }} />
           </View>
         </Pressable>
       ) : null}
@@ -304,7 +304,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           {/* 控制行：播放/暂停（主按钮）+ 右侧功能 */}
           <View style={styles.ctrlRow}>
             <TouchableOpacity style={styles.playBtn} onPress={togglePlay} activeOpacity={0.85}>
-              <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={26} color="#fff" style={!playing ? { marginLeft: 2 } : undefined} />
+              <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={24} color="#16181c" style={!playing ? { marginLeft: 3 } : undefined} />
             </TouchableOpacity>
             <Text style={styles.ctrlHintText} numberOfLines={1}>
               {source.audioOnly ? t('纯音频') : ''}
@@ -430,47 +430,58 @@ const styles = StyleSheet.create({
   topWrap: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
     flexDirection: 'row', alignItems: 'center',
-    paddingTop: 40, paddingBottom: 20, paddingHorizontal: 6,
+    paddingTop: 44, paddingBottom: 26, paddingHorizontal: 6,
   },
   topBtn: {
-    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(20,20,24,0.35)',
   },
-  titleWrap: { flex: 1, marginHorizontal: 6, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
-  titleText: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  titleWrap: { flex: 1, marginHorizontal: 10, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
+  titleText: {
+    color: '#fff', fontSize: 14, fontWeight: '600', flexShrink: 1,
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
   bottomShade: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, height: 190,
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: 200,
   },
   dockWrap: {
     position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 31,
-    paddingHorizontal: 14, paddingBottom: 12,
+    paddingHorizontal: 16, paddingBottom: 16,
   },
   progressRow: { flexDirection: 'row', alignItems: 'center' },
-  timeText: { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontVariant: ['tabular-nums'], marginHorizontal: 6, minWidth: 34, textAlign: 'center' },
+  timeText: { color: 'rgba(255,255,255,0.92)', fontSize: 11, fontVariant: ['tabular-nums'], marginHorizontal: 8, minWidth: 34, textAlign: 'center' },
   progressTouch: {
-    flex: 1, height: 26, justifyContent: 'center', marginHorizontal: 2,
+    flex: 1, height: 30, justifyContent: 'center',
   },
-  progressTrackBg: { height: 3, borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
-  progressFill: { height: 3, backgroundColor: TINT },
+  progressTrackBg: {
+    height: 2, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  progressFill: { height: 2, backgroundColor: '#fff' },
   progressThumb: {
-    position: 'absolute', top: 9, width: 8, height: 8, borderRadius: 4,
-    marginLeft: -4, backgroundColor: '#fff',
+    position: 'absolute', top: 11, width: 6, height: 6, borderRadius: 3,
+    marginLeft: -3, backgroundColor: '#fff',
   },
-  ctrlRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  ctrlRow: { flexDirection: 'row', alignItems: 'center', marginTop: 0 },
   playBtn: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 40, height: 40, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
   },
-  ctrlHintText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginLeft: 8, flexShrink: 1 },
-  ctrlBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  rateText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  ctrlHintText: { color: 'rgba(255,255,255,0.6)', fontSize: 11, marginLeft: 8, flexShrink: 1 },
+  ctrlBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  rateText: { color: '#fff', fontSize: 12, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
   centerPlayWrap: {
     position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 15,
     alignItems: 'center', justifyContent: 'center',
   },
   centerPlayBtn: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
   seekFlashWrap: {
     position: 'absolute', left: 0, right: 0, top: '38%', zIndex: 16,
