@@ -120,8 +120,9 @@ export default function TripScreen() {
       if (reset) setItems(list);
       else setItems((prev) => [...prev, ...list]);
       const cursor = res?.content?.nextTime || res?.content?.next || res?.content?.lastTime;
-      // 翻页终止：本页有数据 且 游标确有前进（防止接口返回恒定游标导致死循环）
-      setHasMore(list.length >= 20 && !!cursor && String(cursor) !== lastTime);
+      // 翻页终止：本页有数据 且 游标确有前进（防止接口返回恒定游标导致死循环）。
+      // Y30: 不依赖硬编码 20（接口实际返回条数可能 <20 → 永远停在第一页）
+      setHasMore(list.length > 0 && !!cursor && String(cursor) !== lastTime);
       if (cursor) setLastTime(String(cursor));
     } catch (e: any) {
       setError(errorMessage(e));
@@ -155,6 +156,14 @@ export default function TripScreen() {
     }
     return c;
   }, [items, today]);
+
+  // Y32: 当前过滤视图为空但有更多数据 → 自动续拉（空列表时 onEndReached 永不触发，
+  //     如 upcoming 过滤下前几页都是已过去行程——此前永远停在「暂无即将到来的行程」）
+  useEffect(() => {
+    if (filteredItems.length === 0 && hasMore && !loadingMore && !loading && tripFilter !== 'past') {
+      fetchTrips(false);
+    }
+  }, [filteredItems.length, hasMore, loadingMore, loading, tripFilter, fetchTrips]);
 
   const renderItem = ({ item, index }: { item: TripItem; index: number }) => {
     const state = tripNodeState(item.showDate, today);
