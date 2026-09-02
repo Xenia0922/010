@@ -247,10 +247,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 
       {/* 缓冲/加载中：中央转圈（内核 onLoad 前；仅在非 error 时） */}
       {state === 'loading' && !error ? (
-        <View style={styles.loadingWrap} pointerEvents="none">
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.loadingText}>{t('加载中…')}</Text>
-        </View>
+        <LoadingHint />
       ) : null}
 
       {/* 暂停/停止态：中央播放钮。音频源（语音卡）原地播放；视频卡片点击进全屏续播；页面播放器原地续播 */}
@@ -456,6 +453,22 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       </Modal>
     </>
+  );
+}
+
+/** 加载中指示：长时间未出画面给出弱提示（>15s），避免黑屏永转圈无反馈 */
+function LoadingHint() {
+  const { t } = useI18n();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 15000);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <View style={styles.loadingWrap} pointerEvents="none">
+      <ActivityIndicator size="large" color="#fff" />
+      <Text style={styles.loadingText}>{slow ? t('加载时间较长，若仍未出画面请点「重试」或切换网页播放器') : t('加载中…')}</Text>
+    </View>
   );
 }
 

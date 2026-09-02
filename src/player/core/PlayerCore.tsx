@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { usePlayerStore } from '../store/playerStore';
+import { logWarn } from '../../utils/runtimeLog';
 import { NativeKernel, NativeKernelHandle } from './NativeKernel';
 import { ExoKernel } from './ExoKernel';
 import { WebKernel, WebKernelHandle } from './WebKernel';
@@ -77,6 +78,8 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
 
   const kernelError = useCallback(
     (msg: string) => {
+      // 诊断：内核失败原因写 runtimeLog（设置→日志可导出）
+      try { logWarn(`[player] kernel fail ${msg}`, 'player.kernelError'); } catch {}
       // 有候选线路 → 自动切换下一线路（B站多线路/官方多备用地址）；全部失败才进 error 态
       const switched = usePlayerStore.getState().nextCandidate();
       if (!switched) {
