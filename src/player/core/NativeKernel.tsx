@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import { StyleSheet } from 'react-native';
 import Video from 'react-native-video';
 import { PlayerSource } from '../types';
+import { logInfo } from '../../utils/runtimeLog';
 
 export interface NativeKernelHandle {
   seek: (t: number) => void;
@@ -19,11 +20,15 @@ interface Props {
   onProgress: (t: number) => void;
   onEnd: () => void;
   onError: (detail: string) => void;
+  /** 首帧上屏（诊断 + 结束 loading） */
+  onFirstFrame?: () => void;
+  /** 缓冲开始/结束（诊断卡顿） */
+  onBufferChange?: (buffering: boolean) => void;
 }
 
 /** RNV 内核：HLS/mp4/mp3/flac 等 ExoPlayer 支持的流 */
 export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function NativeKernel(
-  { source, paused, rate, volume = 1, resumeAt, onLoad, onProgress, onEnd, onError },
+  { source, paused, rate, volume = 1, resumeAt, onLoad, onProgress, onEnd, onError, onFirstFrame, onBufferChange },
   ref,
 ) {
   const videoRef = useRef<any>(null);
@@ -60,6 +65,7 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       playInBackground
       playWhenInactive
       onLoad={(e) => {
+        try { logInfo(`[vod] NativeKernel onLoad dur=${Math.round(e.duration || 0)}`, 'player.native'); } catch {}
         const ns = e?.naturalSize;
         onLoad(
           e.duration || 0,
@@ -75,6 +81,13 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       }}
       onProgress={(e) => onProgress(e.currentTime || 0)}
       onEnd={onEnd}
+      onReadyForDisplay={() => {
+        try { logInfo('[vod] first frame onReadyForDisplay', 'player.native'); } catch {}
+        onFirstFrame?.();
+      }}
+      onBuffer={(e) => {
+        onBufferChange?.(!!e?.isBuffering);
+      }}
       onError={(event: any) => onError(JSON.stringify(event?.error || event).slice(0, 220))}
     />
   );

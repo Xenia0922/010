@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { LiveExoView } from '../../native/LivePlayer';
 import { usePlayerStore } from '../store/playerStore';
 import { PlayerSource } from '../types';
+import { logInfo } from '../../utils/runtimeLog';
 
 interface Props {
   source: PlayerSource;
@@ -17,6 +18,11 @@ interface Props {
  * - paused 从 store 同步 → 控制条播放/暂停真实控原生。
  */
 export function ExoKernel({ source, onError }: Props) {
+  // 诊断：直播内核每次开播/切源记录（runtimeLog → 设置可导出）
+  useEffect(() => {
+    try { logInfo(`[live] ExoKernel open url=${String(source.url).slice(0, 90)} audioOnly=${!!source.audioOnly}`, 'player.exo'); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source.url]);
   // ⚠️ 只在「用户显式暂停」(state==='paused') 时置原生暂停。
   // 此前写成 state!=='playing'：loading（首帧前）阶段 paused=true → 原生 playWhenReady=false
   // → 流根本不启动 → onSize 永不触发 → 永远 loading ——「大概率进不去、一进直播卡一帧」根因。
@@ -33,6 +39,7 @@ export function ExoKernel({ source, onError }: Props) {
       paused={paused}
       onSize={() => {
         // 首帧画面尺寸 = 已开始播放 → 结束 loading
+        try { logInfo('[live] ExoKernel first frame (onSize) → playing', 'player.exo'); } catch {}
         usePlayerStore.getState().setState('playing');
       }}
       onError={(e) => {

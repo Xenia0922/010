@@ -94,6 +94,12 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
 
   const paused = state !== 'playing';
   const kernel = useWebKernel ? 'web' : activeKernel;
+  // 诊断：每次开播记录所选内核与源（runtimeLog）
+  const lastLogged = useRef('');
+  if (lastLogged.current !== `${kernel}|${source.url}`) {
+    lastLogged.current = `${kernel}|${source.url}`;
+    try { logWarn(`[player] open kernel=${kernel} state=${state} kind=${source.kind} url=${String(source.url).slice(0, 90)}`, 'player.core'); } catch {}
+  }
 
   if (kernel === 'web') {
     return (
@@ -130,6 +136,13 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
       onLoad={handleLoad}
       onProgress={handleProgress}
       onEnd={() => setState('paused')}
+      onFirstFrame={() => {
+        // 首帧上屏：保险起见确保 state 已 playing（加载转圈结束）
+        if (usePlayerStore.getState().state === 'loading') setState('playing');
+      }}
+      onBufferChange={(buffering) => {
+        try { logWarn(`[vod] buffer ${buffering ? 'start' : 'end'}`, 'player.native'); } catch {}
+      }}
       onError={(detail) => kernelError(`原生播放器失败：${detail}`)}
     />
   );

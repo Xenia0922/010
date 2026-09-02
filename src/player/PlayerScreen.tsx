@@ -6,6 +6,7 @@ import { PlayerCore } from './core/PlayerCore';
 import { PlayerChrome } from './chrome/PlayerChrome';
 import { FullscreenManager } from './chrome/FullscreenManager';
 import { PlayerScreenProps } from './types';
+import { logInfo } from '../utils/runtimeLog';
 
 interface Props extends PlayerScreenProps {
   /** 弹幕 overlay 等附加层插槽（由页面挂 DanmakuOverlay） */
@@ -67,10 +68,13 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
     const mp = useMiniPlayerStore.getState();
     if (mp && mp.visible) mp.close();
     usePlayerStore.getState().open(source, meta, danmaku);
+    try { logInfo(`[player] PlayerScreen open kind=${source.kind} url=${String(source.url).slice(0, 90)}`, 'player.screen'); } catch {}
     return () => {
-      // 非 persistent：卸载时若仍是当前源则关闭播放器
-      if (!persistent && openedFor.current === sourceUrl) {
-        usePlayerStore.getState().close();
+      // 卸载时若全局播放器仍指向本页打开的源 → 关闭（persistent 页面关闭也应清干净，
+      // 否则陈旧 source/state 残留可能干扰二次进入播放（首次能进、之后卡首帧））
+      const st = usePlayerStore.getState();
+      if (openedFor.current === sourceUrl && (!st.source || st.source.url === sourceUrl || !st.source.url)) {
+        if (st.source && st.source.url === sourceUrl) st.close();
       }
       openedFor.current = '';
     };
