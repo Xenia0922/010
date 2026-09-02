@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { usePlayerStore } from '../store/playerStore';
 import { NativeKernel, NativeKernelHandle } from './NativeKernel';
 import { ExoKernel } from './ExoKernel';
-import { WebKernel } from './WebKernel';
+import { WebKernel, WebKernelHandle } from './WebKernel';
 
 /**
  * PlayerCore：内核路由（重写核心）。
@@ -19,6 +19,7 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const useWebKernel = usePlayerStore((s) => s.useWebKernel);
   const position = usePlayerStore((s) => s.position);
   const nativeRef = useRef<NativeKernelHandle>(null);
+  const webRef = useRef<WebKernelHandle>(null);
 
   const setState = usePlayerStore((s) => s.setState);
   const setPosition = usePlayerStore((s) => s.setPosition);
@@ -27,15 +28,25 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const setActiveKernel = usePlayerStore((s) => s.setActiveKernel);
   const setUseWebKernel = usePlayerStore((s) => s.setUseWebKernel);
   const seekTarget = usePlayerStore((s) => s.seekTarget);
-  const rate = usePlayerStore((s) => s.rate);
 
-  // seek 指令消费：UI 拖动进度条 → NativeKernel.seek → 清零
+  // seek 指令消费：UI 拖动进度条 → 当前内核 seek（native/exo 直调；web 经 postMessage）→ 清零
   useEffect(() => {
-    if (seekTarget > 0 && !useWebKernel && activeKernel === 'native' && nativeRef.current) {
+    if (seekTarget <= 0) return;
+    if (!useWebKernel && activeKernel === 'native' && nativeRef.current) {
       nativeRef.current.seek(seekTarget);
+      usePlayerStore.getState().setSeekTarget(0);
+    } else if (useWebKernel && webRef.current) {
+      webRef.current.seek(seekTarget);
       usePlayerStore.getState().setSeekTarget(0);
     }
   }, [seekTarget, useWebKernel, activeKernel]);
+  // rate 同步：web 内核每次倍速变化下发（native 经 prop 实时生效）
+  const rate = usePlayerStore((s) => s.rate);
+  useEffect(() => {
+    if (useWebKernel && webRef.current && rate > 0) {
+      webRef.current.setRate(rate);
+    }
+  }, [rate, useWebKernel]);
 
   const handleLoad = useCallback(
     (duration: number, naturalSize?: { width: number; height: number }) => {
@@ -84,6 +95,7 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   if (kernel === 'web') {
     return (
       <WebKernel
+        ref={webRef}
         source={source}
         resumeAt={position > 1 ? position : 0}
         onProgress={handleProgress}

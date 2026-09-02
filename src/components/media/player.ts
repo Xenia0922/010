@@ -70,6 +70,20 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
     }
   });
 
+  // 外部控制指令（RN 控制层）：seek / 倍速 / 播放暂停
+  if (window.ReactNativeWebView) {
+    window.addEventListener('message', function(ev) {
+      var msg = {};
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      try {
+        if (msg.type === 'seek' && typeof msg.time === 'number') video.currentTime = msg.time;
+        else if (msg.type === 'rate' && msg.rate > 0) video.playbackRate = msg.rate;
+        else if (msg.type === 'play') video.play();
+        else if (msg.type === 'pause') video.pause();
+      } catch (e) {}
+    });
+  }
+
   var url = ${JSON.stringify(streamUrl)};
   var ext = url.split('?')[0].split('#')[0].toLowerCase();
 

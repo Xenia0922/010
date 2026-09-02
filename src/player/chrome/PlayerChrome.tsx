@@ -191,13 +191,14 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
-      {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行） */}
-      <View style={[StyleSheet.absoluteFill, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
+      {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行）。
+          唤出层始终可点（控制条隐藏后点屏幕任意处唤出）；渐变/坞内容按 controlsVisible 显隐 */}
+      <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
+      <View style={StyleSheet.absoluteFill} pointerEvents={controlsVisible ? 'box-none' : 'none'}>
         <LinearGradient
           pointerEvents="none"
           colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
-          style={styles.bottomShade}
+          style={[styles.bottomShade, { opacity: controlsVisible ? 1 : 0 }]}
         />
         <View style={styles.dockWrap} pointerEvents="box-none">
           {/* 进度行：当前时间 —— 可拖进度 —— 总时间（直播仅显示 直播） */}

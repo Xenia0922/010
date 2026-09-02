@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef, useImperativeHandle, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getPlayerHtml } from '../../components/media/player';
@@ -12,13 +12,34 @@ interface Props {
   onError: (message: string) => void;
 }
 
+export interface WebKernelHandle {
+  seek: (t: number) => void;
+  setRate: (r: number) => void;
+}
+
 /**
  * Web 内核（flv.js + hls.js）：RTMP 不可达/原生失败时的兜底播放器。
- * 与 RN 控制层经 postMessage 双向通信：进度上报/结束/错误。
+ * 与 RN 控制层经 postMessage 双向通信：进度上报/结束/错误；
+ * 控制层经 forwardRef 下发 seek / 倍速（网页内核录播也能拖动与变速）。
  */
-export function WebKernel({ source, resumeAt, onProgress, onEnded, onError }: Props) {
+export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
+  { source, resumeAt, onProgress, onEnded, onError },
+  ref,
+) {
+  const webRef = useRef<WebView>(null);
+
+  useImperativeHandle(ref, () => ({
+    seek: (t: number) => {
+      webRef.current?.postMessage(JSON.stringify({ type: 'seek', time: Math.max(0, t) }));
+    },
+    setRate: (r: number) => {
+      webRef.current?.postMessage(JSON.stringify({ type: 'rate', rate: r }));
+    },
+  }));
+
   return (
     <WebView
+      ref={webRef}
       source={{ html: getPlayerHtml(source.url, undefined, resumeAt || 0, source.kind !== 'live') }}
       style={StyleSheet.absoluteFill}
       javaScriptEnabled
@@ -45,6 +66,6 @@ export function WebKernel({ source, resumeAt, onProgress, onEnded, onError }: Pr
       }}
     />
   );
-}
+});
 
 export default WebKernel;
