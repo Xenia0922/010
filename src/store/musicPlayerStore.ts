@@ -125,6 +125,22 @@ interface MusicPlayerState {
   prev: () => Track | null;
 }
 
+/**
+ * 收藏键归并：历史版本键含 title|artist|album（三段）——用户要求「一首歌一个收藏」，
+ * 收藏单位统一为 title|artist（两段）；三段旧键转两段并去重；纯 musicId 键保留。
+ */
+function normalizeFavoriteKey(raw: string): string | null {
+  const v = String(raw || '');
+  if (!v) return null;
+  const parts = v.split('|');
+  // 三段键（title|artist|album）→ title|artist；两段键已是目标；无 | 的 musicId 键保留原样
+  if (parts.length >= 3) {
+    const k2 = `${parts[0]}|${parts[1]}`.trim();
+    return k2 !== '|' ? k2 : null;
+  }
+  return v.trim() || null;
+}
+
 function nextIndex(current: number, length: number, mode: PlayMode): number {
   if (length === 0) return -1;
   if (mode === 'single') return current;
@@ -226,10 +242,10 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
         if (t) {
           // 键 = title|artist|album（album 区分同名不同版本/不同公演——修复「收藏一首导致同名一起收藏」）；
           // 兼容 B7 早期 title|artist 键数据
-          const k3 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`.trim();
           const k2 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
-          if (k3 !== '||' && f.includes(k3)) return true;
+          const k3 = `${k2}|${String(t.album || '').trim()}`.trim(); // 兼容尚未归并的旧三段键
           if (k2 !== '|' && f.includes(k2)) return true;
+          if (k3 !== '||' && f.includes(k3)) return true;
         }
         return false;
       },
@@ -237,20 +253,27 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       toggleFavorite: (id, track) => set((s) => {
         if (!id) return s;
         const t = track || s.queue.find((x) => String(x.musicId || x.id) === String(id));
-        let keys: string[] = [];
         if (t) {
-          const k3 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`.trim();
           const k2 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
-          keys = [...(k3 !== '||' ? [k3] : []), ...(k2 !== '|' ? [k2] : [])];
+          const k3 = `${k2}|${String(t.album || '').trim()}`.trim();
+          // 已收藏（k2 或旧 k3 或 musicId）→ 取消并清掉同歌所有旧版本记录（归并）
+          const has = (k2 !== '|' && s.favorites.includes(k2))
+            || (k3 !== '||' && s.favorites.includes(k3))
+            || s.favorites.includes(id);
+          if (has) {
+            const removeKeys = [id];
+            if (k2 !== '|') removeKeys.push(k2);
+            if (k3 !== '||') removeKeys.push(k3);
+            // 旧三段其它 album 版本（同 title|artist 前缀）一并清理
+            const prefix = k2 !== '|' ? k2 + '|' : null;
+            return { favorites: s.favorites.filter((f) => !removeKeys.includes(f) && !(prefix && f.startsWith(prefix))) };
+          }
+          // 收藏：统一存 title|artist（一首歌一个收藏）
+          return { favorites: [...s.favorites, k2 !== '|' ? k2 : id] };
         }
-        if (!keys.length) keys = [id];
-        // 任一键已收藏 → 全部移除（含旧数据清理）；否则写入精确键 k3
-        const hit = keys.find((k) => s.favorites.includes(k)) ?? (s.favorites.includes(id) ? id : null);
-        if (hit !== null && hit !== undefined) {
-          const removeSet = new Set([hit, ...keys]);
-          return { favorites: s.favorites.filter((f) => !removeSet.has(f)) };
-        }
-        return { favorites: [...s.favorites, keys[0]] };
+        // 无 track：按原 id/键切换
+        if (s.favorites.includes(id)) return { favorites: s.favorites.filter((f) => f !== id) };
+        return { favorites: [...s.favorites, normalizeFavoriteKey(id) || id] };
       }),
 
       next: () => {
@@ -286,6 +309,18 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
         duration: s.duration,
       }),
       onRehydrateStorage: () => (state) => {
+        // 历史重复收藏归并：三段键(含 album) → 一首歌一个（title|artist），去重
+        if (state && Array.isArray(state.favorites) && state.favorites.length) {
+          const seen = new Map<string, string>();
+          state.favorites.forEach((raw: string) => {
+            const k = normalizeFavoriteKey(raw);
+            if (k) seen.set(k, k);
+          });
+          const normalized = [...seen.keys()];
+          if (normalized.length !== state.favorites.length) {
+            useMusicPlayerStore.setState({ favorites: normalized });
+          }
+        }
         if (state && state.currentIndex >= 0 && state.queue.length > 0) {
           // 续播：把持久化的 position 转成 seekTarget，等 Video onLoad 就绪后 seek 回去。
           // （此前 position 只写不读，重启后进度记忆形同虚设，音频永远从 0 开始）

@@ -121,15 +121,34 @@ export default function MusicLibraryScreen() {
   const videoRef = useRef<any>(null);
 
   // 收藏计数：与 FAV 列表（isFavorite 过滤）一致，避免显示旧 id 键造成的虚高
-  const favCount = useMemo(
-    () => songs.filter((t) => useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''), t)).length,
-    [songs, favorites],
-  );
+  // 收藏数 = 「已收藏的歌」数（同 title|artist 多版本计 1 首）
+  const favCount = useMemo(() => {
+    const seen = new Set<string>();
+    let n = 0;
+    for (const t of songs) {
+      if (!useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''), t)) continue;
+      const k = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      n += 1;
+    }
+    return n;
+  }, [songs, favorites]);
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
     if (albumFilter) list = list.filter(item => String(item.groupLabel || '') === albumFilter.groupLabel && String(item.album || '') === albumFilter.album);
-    else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
+    else if (group === 'FAV') {
+      list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
+      // 一首歌一个收藏：同 title|artist 多版本只显示一条
+      const seenK = new Set<string>();
+      list = list.filter(item => {
+        const k = `${String(item.title || '').trim()}|${String(item.artist || '').trim()}`;
+        if (seenK.has(k)) return false;
+        seenK.add(k);
+        return true;
+      });
+    }
     else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
