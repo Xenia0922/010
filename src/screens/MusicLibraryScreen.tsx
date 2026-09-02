@@ -26,6 +26,7 @@ import { formatTimestamp, joinMeta } from '../utils/format';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
 import CoverArt from '../components/CoverArt';
+import { NetworkImage } from '../components/NetworkImage';
 import { Skeleton } from '../components/Skeleton';
 import { EmptyState, ErrorState } from '../components/StateViews';
 import { FadeInView, ScalePressable } from '../components/Motion';
@@ -67,7 +68,8 @@ function EqualizerBars({ color, size = 13 }: { color: string; size?: number }) {
 }
 
 /** 拼接歌曲元信息并去重：专辑/歌手/团体名常重复（如 album=SNH48 + artist=SNH48），只保留一份 */
-const GROUP_TABS = ['ALL', 'SNH48', 'GNZ48', 'BEJ48', 'AKB48', 'CKG48', 'CGT48', 'SHY48', 'TSH48', 'TPE48', '7SENSES', 'FAV'];
+// 收藏紧跟全部之后（用户要求：放太后面翻不到）；其余按团体排列
+const GROUP_TABS = ['ALL', 'FAV', 'SNH48', 'GNZ48', 'BEJ48', 'AKB48', 'CKG48', 'CGT48', 'SHY48', 'TSH48', 'TPE48', '7SENSES'];
 const GROUP_LABELS: Record<string, string> = {
   ALL: '全部',
   SNH48: 'SNH48',
@@ -104,6 +106,9 @@ export default function MusicLibraryScreen() {
   // 搜索词 / 分团：纯 local state（不再镜像到 store，避免双写）。
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('ALL');
+  // 视图切换：单曲列表 / 专辑分组；albumFilter = 专辑详情过滤（进入专辑曲目视图）
+  const [viewMode, setViewMode] = useState<'songs' | 'albums'>('songs');
+  const [albumFilter, setAlbumFilter] = useState<{ groupLabel: string; album: string } | null>(null);
   const onQueryChange = (q: string) => { setQuery(q); };
   const onGroupChange = (g: string) => { setGroup(g); };
   const [status, setStatus] = useState('');
@@ -120,12 +125,41 @@ export default function MusicLibraryScreen() {
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
-    if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')));
+    if (albumFilter) list = list.filter(item => String(item.groupLabel || '') === albumFilter.groupLabel && String(item.album || '') === albumFilter.album);
+    else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')));
     else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
-  }, [query, songs, group, favorites]);
+  }, [query, songs, group, favorites, albumFilter]);
   const queueSource = useMemo(() => filteredSongs.map((t) => ({ ...t })), [filteredSongs]);
+
+  // 专辑分组：按 团体+专辑 聚合（封面取组内第一张、统计曲目数与总时长）
+  const albums = useMemo(() => {
+    const map = new Map<string, { key: string; groupLabel: string; album: string; cover: string; count: number; durationSec: number }>();
+    for (const t of filteredSongs) {
+      const album = String(t.album || '').trim();
+      if (!album) continue;
+      const key = `${String(t.groupLabel || '')}|${album}`;
+      const entry = map.get(key) || {
+        key,
+        groupLabel: String(t.groupLabel || ''),
+        album,
+        cover: '',
+        count: 0,
+        durationSec: 0,
+      };
+      entry.count += 1;
+      entry.durationSec += Number(t.durationSec) || 0;
+      if (!entry.cover) entry.cover = String(t.coverUrl || t.cover || '');
+      map.set(key, entry);
+    }
+    return [...map.values()].sort((a, b) => {
+      const ga = a.groupLabel.toLowerCase();
+      const gb = b.groupLabel.toLowerCase();
+      if (ga !== gb) return ga < gb ? -1 : 1;
+      return a.album.localeCompare(b.album, 'zh');
+    });
+  }, [filteredSongs]);
 
   // 双源合并：官方源（口袋48官网静态 JS）+ R2 音乐库（music.gnz.hk 公演音频，1559 首）。
   // 去重键 title|artist（官方源优先）；任一源失败不阻塞另一源，合并结果为空才报错。
@@ -263,9 +297,55 @@ export default function MusicLibraryScreen() {
             <MaterialCommunityIcons name="close-circle" size={16} color={palette.labelTertiary} />
           </ScalePressable>
         ) : null}
+        {/* 单曲/专辑视图切换（专辑详情视图下隐藏） */}
+        {!albumFilter ? (
+          <ScalePressable
+            onPress={() => setViewMode((v) => (v === 'songs' ? 'albums' : 'songs'))}
+            pressedScale={0.9}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ marginLeft: 4 }}
+          >
+            <MaterialCommunityIcons
+              name={viewMode === 'songs' ? 'album' : 'playlist-music'}
+              size={18}
+              color={viewMode === 'songs' ? palette.labelTertiary : palette.tint}
+            />
+          </ScalePressable>
+        ) : null}
       </View>
-      {/* 横向标签栏：使用 flex:1 的 ScrollView + flexDirection: row，配合固定宽度 chip，
-           彻底避免 Yoga 在屏幕外 item 重新测量导致的拉伸问题。 */}
+      {/* 专辑详情条：返回 + 专辑名 + 曲目数 + 播放全部（替代分团 tab 栏） */}
+      {albumFilter ? (
+        <View style={[styles.tabsBarBase, { borderBottomColor: palette.separator }]}>
+          <View style={styles.albumBarRow}>
+            <ScalePressable onPress={() => setAlbumFilter(null)} pressedScale={0.9} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <MaterialCommunityIcons name="arrow-left" size={18} color={palette.tint} />
+            </ScalePressable>
+            <View style={{ flex: 1, marginLeft: 8, minWidth: 0 }}>
+              <Text numberOfLines={1} style={[styles.gText, { color: palette.label, fontWeight: '800' }]}>{albumFilter.album}</Text>
+              <Text numberOfLines={1} style={[styles.gText, { color: palette.labelTertiary, fontSize: 11 }]}>
+                {albumFilter.groupLabel || t('未知团体')} · {filteredSongs.length} {t('首')}
+              </Text>
+            </View>
+            <ScalePressable
+              onPress={() => {
+                // 播放全部：以专辑内曲目为队列
+                if (!filteredSongs.length) return;
+                MusicEngine.playTrack(filteredSongs[0], filteredSongs.map((x) => ({ ...x })));
+                setShowFullScreen(true);
+              }}
+              pressedScale={0.95}
+              activeOpacity={0.8}
+              style={[styles.playAllBtn, { backgroundColor: palette.tint }]}
+            >
+              <MaterialCommunityIcons name="play" size={14} color={palette.onTint} />
+              <Text style={[styles.playAllText, { color: palette.onTint }]}>{t('播放全部')}</Text>
+            </ScalePressable>
+          </View>
+        </View>
+      ) : (
+      /* 横向标签栏：使用 flex:1 的 ScrollView + flexDirection: row，配合固定宽度 chip，
+           彻底避免 Yoga 在屏幕外 item 重新测量导致的拉伸问题。 */
       <View style={[styles.tabsBarBase, { borderBottomColor: palette.separator }]}>
         <ScrollView
           horizontal
@@ -301,6 +381,7 @@ export default function MusicLibraryScreen() {
           ))}
         </ScrollView>
       </View>
+      )}
       {status ? (
         /失败|错误/.test(status) ? (
           <ErrorState title={t('加载失败')} hint={status} onAction={() => loadAll()} />
@@ -345,6 +426,40 @@ export default function MusicLibraryScreen() {
             hint={t('换个关键词或分团试试')}
           />
         </View>
+      ) : viewMode === 'albums' && !albumFilter ? (
+        <PerfFlatList
+          data={albums}
+          keyExtractor={(item) => item.key}
+          numColumns={2}
+          contentContainerStyle={styles.listContent}
+          removeClippedSubviews={false}
+          renderItem={({ item, index }) => (
+            <FadeInView delay={index < 12 ? 80 + index * 25 : 0} duration={300} style={styles.albumItem}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setAlbumFilter({ groupLabel: item.groupLabel, album: item.album })}
+              >
+                <View style={[styles.albumCover, { backgroundColor: palette.fill2 }]}>
+                  {item.cover ? (
+                    <NetworkImage source={{ uri: item.cover }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialCommunityIcons name="album" size={40} color={palette.labelTertiary} />
+                    </View>
+                  )}
+                  <View style={styles.albumCountPill}>
+                    <Text style={styles.albumCountText}>{item.count} {t('首')}</Text>
+                  </View>
+                </View>
+                <Text numberOfLines={1} style={[styles.songTitle, { color: palette.label, marginTop: 6 }]}>{item.album}</Text>
+                <Text numberOfLines={1} style={[styles.songArtist, { color: palette.labelTertiary }]}>
+                  {item.groupLabel || t('未知团体')}
+                  {item.durationSec ? ` · ${Math.floor(item.durationSec / 60)}${t('分钟')}` : ''}
+                </Text>
+              </TouchableOpacity>
+            </FadeInView>
+          )}
+        />
       ) : (
       <PerfFlatList
           data={filteredSongs}
@@ -402,7 +517,8 @@ export default function MusicLibraryScreen() {
                   <Text style={[styles.songTitle, { color: palette.label }]} numberOfLines={2}>{item.title || t('无标题')}</Text>
                   <View style={styles.songMetaLine}>
                     <Text style={[styles.songArtist, { color: palette.labelSecondary }]} numberOfLines={1}>
-                      {joinMeta([item.album, item.artist, item.groupLabel]) || t('官方音乐')}
+                      {/* 团体名优先（用户要求：R2 公演曲显示团体而非专辑）；公演标记仅 R2 曲 */}
+                      {item.source === 'r2-performance' ? `${t('公演')} · ` : ''}{joinMeta([item.groupLabel, item.artist, item.album]) || t('官方音乐')}
                     </Text>
                     {item.ctime ? (
                       <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
@@ -517,6 +633,13 @@ export default function MusicLibraryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'transparent' },
+  albumBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6 },
+  playAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6 },
+  playAllText: { fontSize: 12, fontWeight: '700' },
+  albumItem: { width: '48.5%', marginBottom: 12 },
+  albumCover: { width: '100%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden' },
+  albumCountPill: { position: 'absolute', right: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  albumCountText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

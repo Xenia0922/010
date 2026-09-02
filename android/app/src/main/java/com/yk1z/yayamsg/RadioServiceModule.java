@@ -16,8 +16,9 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.lang.ref.WeakReference;
 
 /**
- * 电台前台保活服务桥：JS 侧开播/停播时启停 RadioForegroundService，
- * 通知栏「停止」→ RadioStopReceiver → 向 JS 发 RadioStopRequested 事件。
+ * 后台播放媒体通知桥（媒体样式通知）：
+ * - begin/updateMedia：启动/更新 RadioForegroundService 的媒体通知（标题/封面/播放态/进度）
+ * - 通知栏「播放暂停/上一首/下一首/停止」→ RadioMediaReceiver → 向 JS 发控制事件
  */
 public class RadioServiceModule extends ReactContextBaseJavaModule {
   private static WeakReference<ReactApplicationContext> contextRef;
@@ -35,25 +36,41 @@ public class RadioServiceModule extends ReactContextBaseJavaModule {
 
   /** 通知栏「停止」被点击：通知 JS 停播（由 RadioStopReceiver 调用） */
   public static void emitStopRequested(Context context) {
+    emitControl(context, "stop");
+  }
+
+  /** 媒体控制按钮被点击：通知 JS 执行对应动作（play_pause/prev/next/stop） */
+  public static void emitControl(Context context, String action) {
     ReactApplicationContext reactContext = contextRef == null ? null : contextRef.get();
     if (reactContext == null || !reactContext.hasActiveCatalystInstance()) return;
     WritableMap payload = Arguments.createMap();
+    payload.putString("action", action);
     reactContext
         .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-        .emit("RadioStopRequested", payload);
+        .emit("RadioControlRequested", payload);
   }
 
-  /** 开播：启动前台保活服务（幂等，重复调用仅更新通知文案） */
+  /** 开播/更新：启动前台保活服务并展示媒体通知（幂等，重复调用仅更新通知） */
   @ReactMethod
-  public void begin(String title) {
+  public void updateMedia(String title, String cover, boolean isPlaying, double position, double duration) {
     ReactApplicationContext context = getReactApplicationContext();
     Intent intent = new Intent(context, RadioForegroundService.class);
     intent.putExtra("title", title == null ? "" : title);
+    intent.putExtra("cover", cover == null ? "" : cover);
+    intent.putExtra("isPlaying", isPlaying);
+    intent.putExtra("position", position);
+    intent.putExtra("duration", duration);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       context.startForegroundService(intent);
     } else {
       context.startService(intent);
     }
+  }
+
+  /** 兼容旧调用：仅更新标题 */
+  @ReactMethod
+  public void begin(String title) {
+    updateMedia(title, "", false, 0, 0);
   }
 
   /** 停播：结束前台保活服务并移除通知 */

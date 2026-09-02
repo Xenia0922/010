@@ -25,7 +25,7 @@
     <activity android:name=".LivePlayerActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:exported="false" android:hardwareAccelerated="true" android:launchMode="singleTop" android:screenOrientation="sensor"/>
     <!-- 电台前台保活服务：纯音频模式下后台/锁屏续播 + 通知栏停止按钮 -->
     <service android:name=".RadioForegroundService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback"/>
-    <receiver android:name=".RadioStopReceiver" android:exported="false"/>
+    <receiver android:name=".RadioMediaReceiver" android:exported="false"/>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait" android:supportsPictureInPicture="true" android:resizeableActivity="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, ImageBackground, Modal, Image, TouchableOpacity, Linking, StyleSheet, Animated, Easing } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation';
@@ -10,9 +10,10 @@ import { fetchJson } from './src/utils/network';
 import { loadCachedMemberData } from './src/services/memberData';
 import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
-import { startRadioForeground, stopRadioForeground, onRadioStopRequested } from './src/native/LivePlayer';
+import { startRadioForeground, stopRadioForeground, onRadioStopRequested, onRadioControlRequested } from './src/native/LivePlayer';
 import { ensureNotificationPermission } from './src/utils/notifications';
 import { useMusicPlayerStore } from './src/store/musicPlayerStore';
+import { MusicEngine } from './src/services/musicPlayer';
 import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
 import { NOTICE_URL } from './src/constants';
@@ -66,23 +67,54 @@ initRuntimeLog().catch(() => {});
 function MusicForegroundBridge() {
   const playbackState = useMusicPlayerStore((s) => s.playbackState);
   const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
+  const position = useMusicPlayerStore((s) => s.position);
+  const duration = useMusicPlayerStore((s) => s.duration);
+  // 媒体通知（MediaStyle 控制）：播放态/切歌/每 5s 进度更新（节流，避免高频写通知）
+  const lastNotify = useRef(0);
   useEffect(() => {
     if (playbackState === 'playing') {
-      const track = useMusicPlayerStore.getState().queue[currentIndex];
+      const st = useMusicPlayerStore.getState();
+      const track = st.queue[st.currentIndex];
+      const now = Date.now();
+      if (now - lastNotify.current < 5000 && track?.title) return;
+      lastNotify.current = now;
+      const cover = String((track as any)?.coverUrl || (track as any)?.cover || '') || '';
       ensureNotificationPermission().then(() => {
-        startRadioForeground(track?.title || '音乐');
+        startRadioForeground({
+          title: track?.title || '音乐',
+          cover,
+          isPlaying: true,
+          position: st.position,
+          duration: st.duration,
+        });
       });
     } else if (playbackState === 'idle') {
       stopRadioForeground();
     }
-    // paused 保留前台服务（通知仍在，用户可一键停止）；error 由 MusicEngine 自动跳歌处理
-  }, [playbackState, currentIndex]);
+    // paused 保留前台服务（通知仍在，可继续/停止）；error 由 MusicEngine 自动跳歌处理
+  }, [playbackState, currentIndex, position]);
   // 通知栏「停止」→ 暂停音乐 + 结束前台服务
   useEffect(() => onRadioStopRequested(() => {
     stopRadioForeground();
     const st = useMusicPlayerStore.getState();
     if (st.playbackState === 'playing' || st.playbackState === 'paused') {
       st.setPlaybackState('paused');
+    }
+  }), []);
+  // 通知栏媒体控制（播放/暂停、上一首、下一首）→ 驱动 MusicEngine
+  useEffect(() => onRadioControlRequested((action) => {
+    const st = useMusicPlayerStore.getState();
+    if (action === 'play_pause') {
+      if (st.playbackState === 'playing') st.setPlaybackState('paused');
+      else if (st.playbackState === 'paused') MusicEngine.resume();
+      else if (!st.queue.length) return;
+    } else if (action === 'next') {
+      MusicEngine.next();
+    } else if (action === 'prev') {
+      MusicEngine.prev();
+    } else if (action === 'stop') {
+      stopRadioForeground();
+      if (st.playbackState === 'playing' || st.playbackState === 'paused') st.setPlaybackState('paused');
     }
   }), []);
   return null;

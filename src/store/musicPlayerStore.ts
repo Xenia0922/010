@@ -113,7 +113,13 @@ interface MusicPlayerState {
 function nextIndex(current: number, length: number, mode: PlayMode): number {
   if (length === 0) return -1;
   if (mode === 'single') return current;
-  if (mode === 'random') return Math.floor(Math.random() * length);
+  if (mode === 'random') {
+    // 随机模式排除当前曲（否则可能"切到同一首"，用户以为没切歌）
+    if (length <= 1) return current;
+    let n = Math.floor(Math.random() * (length - 1));
+    if (n >= current) n += 1;
+    return n;
+  }
   return (current + 1) % length;
 }
 

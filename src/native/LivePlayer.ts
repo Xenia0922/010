@@ -53,11 +53,29 @@ export const LiveExoView = Platform.OS === 'android'
     }>('LiveExoView')
   : null;
 
-/** 开播电台：启动前台保活服务（通知栏 + WAKE_LOCK，后台/锁屏续播） */
-export function startRadioForeground(title: string) {
-  if (Platform.OS === 'android' && RadioServiceModule?.begin) {
-    RadioServiceModule.begin(title || '');
+/** 媒体通知数据（MediaStyle：标题/封面/播放态/进度） */
+export interface RadioMediaInfo {
+  title: string;
+  cover?: string;
+  isPlaying: boolean;
+  position?: number;
+  duration?: number;
+}
+
+/** 开播/更新媒体通知：启动前台保活服务（MediaStyle 通知栏控制 + WAKE_LOCK，后台/锁屏续播） */
+export function startRadioForeground(info: string | RadioMediaInfo) {
+  if (Platform.OS !== 'android' || !RadioServiceModule?.updateMedia) return;
+  if (typeof info === 'string') {
+    RadioServiceModule.updateMedia(info, '', false, 0, 0);
+    return;
   }
+  RadioServiceModule.updateMedia(
+    info.title || '',
+    info.cover || '',
+    !!info.isPlaying,
+    Number(info.position) || 0,
+    Number(info.duration) || 0,
+  );
 }
 
 /** 停播电台：结束前台保活服务并移除通知 */
@@ -71,5 +89,15 @@ export function stopRadioForeground() {
 export function onRadioStopRequested(cb: () => void): () => void {
   if (Platform.OS !== 'android') return () => {};
   const sub = DeviceEventEmitter.addListener('RadioStopRequested', cb);
+  return () => sub.remove();
+}
+
+/** 媒体通知控制回调（播放/暂停、上一首、下一首、停止）：返回解绑函数 */
+export function onRadioControlRequested(cb: (action: 'play_pause' | 'prev' | 'next' | 'stop') => void): () => void {
+  if (Platform.OS !== 'android') return () => {};
+  const sub = DeviceEventEmitter.addListener('RadioControlRequested', (e: any) => {
+    const a = String(e?.action || '');
+    if (a === 'play_pause' || a === 'prev' || a === 'next' || a === 'stop') cb(a);
+  });
   return () => sub.remove();
 }
