@@ -665,6 +665,20 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
   return { ...media, liveId, title, url: ownUrl, isLive: isLiveStreamUrl(ownUrl), needsVlc: streamNeedsProxy(ownUrl) };
 }
 
+/**
+ * 解析直播地址 + 瞬时失败自动重试：首轮全部候选接口都拿不到地址、且是「快速失败」
+ * （网络抖动/接口偶发 500，几秒内就结束）时，稍候 600ms 整轮重试一次。
+ * 若首轮是慢超时（已等满 5s+）则不再重试——慢网重试无意义，避免把点击拖成 20s。
+ */
+async function resolveRoomLiveMediaWithRetry(media: RoomMedia): Promise<RoomMedia> {
+  const started = Date.now();
+  const first = await resolveRoomLiveMedia(media);
+  if (first.url) return first;
+  if (Date.now() - started > 5000) return first;
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  return resolveRoomLiveMedia(media);
+}
+
 function classifyMedia(url: string, msgType: string, text: string): MediaType {
   const lower = `${url} ${msgType} ${text}`.toLowerCase();
   // 先按明确扩展名判定（最高优先级）：避免 url 里含 "live" 字样的普通 .mp4/.m3u8 视频被误判成直播。
@@ -1133,6 +1147,9 @@ export default function FollowedRoomsScreen() {
   const [fullImageUrl, setFullImageUrl] = useState('');
   const [roomPlayer, setRoomPlayer] = useState<RoomMedia | null>(null);
   const [roomPlayerFullscreen, setRoomPlayerFullscreen] = useState(false);
+  /** 直播解析占位：点击无流地址的直播卡 → 立即弹全屏「解析中」，不再干等无反馈（连击才加载进去的元凶） */
+  const [liveResolve, setLiveResolve] = useState<null | { key: string; error: string; media: RoomMedia }>(null);
+  const liveResolveToken = useRef(0);
 
   // 画中画（悬浮窗）状态同步：房间播放器打开且未全屏时置位
   useEffect(() => {
@@ -1662,6 +1679,48 @@ export default function FollowedRoomsScreen() {
     };
   }, [selectedRoom, refreshRoomMessages]);
 
+  /** 直播解析并开播（占位式）：点击即反馈，出地址后无缝换正式播放器 */
+  const resolveLiveAndOpen = useCallback(async (media: RoomMedia) => {
+    const key = String(media.liveId || media.url || 'live');
+    // 同一路正在解析中：忽略重复点击（防连击并发网络风暴）
+    if (liveResolve?.key === key && !liveResolve.error) return;
+    const token = ++liveResolveToken.current;
+    setLiveResolve({ key, error: '', media });
+    try {
+      const resolved = await resolveRoomLiveMediaWithRetry(media);
+      if (token !== liveResolveToken.current) return; // 期间已关闭/改点其它：丢弃过期结果
+      if (!resolved.url) {
+        setLiveResolve({ key, error: t('解析直播地址失败，请检查网络后重试'), media });
+        return;
+      }
+      setLiveResolve(null);
+      // 录播回放（replayHint 且非 rtmp 推流）走可拖进度的 vod 内核；直播走 live 内核
+      const isVod = !resolved.isLive && !isLiveStreamUrl(resolved.url);
+      setRoomPlayer({ ...resolved, isLive: !isVod, needsVlc: resolved.needsVlc || streamNeedsProxy(resolved.url) });
+      // 默认竖屏播放（同视频）；用户手动点全屏才横屏——不要一进就横屏沉浸
+      setRoomPlayerFullscreen(false);
+    } catch (e) {
+      if (token === liveResolveToken.current) {
+        setLiveResolve({ key, error: errorMessage(e) || t('解析直播地址失败，请检查网络后重试'), media });
+      }
+    }
+  }, [liveResolve, t]);
+
+  const cancelLiveResolve = useCallback(() => {
+    liveResolveToken.current += 1; // 使在途解析结果失效
+    setLiveResolve(null);
+  }, []);
+
+  // 直播解析占位期间：Android 硬件返回 = 取消解析（不退出房间）
+  useEffect(() => {
+    if (!liveResolve) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      cancelLiveResolve();
+      return true;
+    });
+    return () => sub.remove();
+  }, [liveResolve, cancelLiveResolve]);
+
   const playMedia = useCallback(async (media: RoomMedia) => {
     if (media.type === 'link') {
       const url = media.url || media.title;
@@ -1675,26 +1734,21 @@ export default function FollowedRoomsScreen() {
     let next = media;
     try {
       if (media.type === 'live' || media.liveId) {
-        // 房间内全屏统一播放器直接播（PlayerScreen，kind=live/vod）——
-        // 不再 navigate('Media') 切到「直播」tab：切 tab 后关闭播放器会停在直播列表页而非房间（用户反馈）
-        try {
-          let next = media;
-          if (!next.url && next.liveId) {
-            // 无现成流地址：按 liveId 解析（详情接口多层兜底）
-            next = await resolveRoomLiveMedia(media);
-          }
-          if (!next.url) {
-            showToast(t('无法解析直播地址，请重试'));
-            return;
-          }
-          // 录播回放（replayHint 且非 rtmp 推流）走可拖进度的 vod 内核
-          const isVod = !next.isLive && !isLiveStreamUrl(next.url);
-          setRoomPlayer({ ...next, isLive: !isVod, needsVlc: next.needsVlc || streamNeedsProxy(next.url) });
-          // 默认竖屏播放（同视频）；用户手动点全屏才横屏——不要一进就横屏沉浸
+        // 已带可播地址：直接开播（零等待，不弹解析占位）
+        if (media.url) {
+          const isVod = !media.isLive && !isLiveStreamUrl(media.url);
+          setRoomPlayer({ ...media, isLive: !isVod, needsVlc: media.needsVlc || streamNeedsProxy(media.url) });
           setRoomPlayerFullscreen(false);
-        } catch (e) {
-          Alert.alert(t('播放失败'), errorMessage(e));
+          return;
         }
+        if (!media.liveId) {
+          showToast(t('无法解析直播地址，请重试'));
+          return;
+        }
+        // 无流地址：交给占位式解析（立即弹「解析中」全屏层，首击即有反馈；失败留层内重试）。
+        // 修复「有概率点不进去、连击多点才能加载」——此前 await 解析数秒无任何反馈，
+        // 瞬时网络失败又只弹一次 toast，用户只能反复点卡片碰运气。
+        resolveLiveAndOpen(media);
         return;
       }
       if (next.type === 'video') {
@@ -1707,7 +1761,7 @@ export default function FollowedRoomsScreen() {
     } catch (error) {
       Alert.alert(t('播放失败'), errorMessage(error));
     }
-  }, [playingMedia, showToast, navigation, t]);
+  }, [playingMedia, showToast, navigation, t, resolveLiveAndOpen]);
 
   const openRoomRankPanel = useCallback(async () => {
     if (!roomPlayer?.liveId) {
@@ -2100,6 +2154,39 @@ export default function FollowedRoomsScreen() {
                 </View>
               </View>
             </Modal>
+          </View>
+        ) : null}
+        {liveResolve ? (
+          /* 直播解析占位：无流地址直播卡点击后立即反馈（转圈/失败重试），出地址后由正式播放器接管 */
+          <View style={[styles.roomPlayerPage, { backgroundColor: '#000' }]}>
+            <TouchableOpacity style={styles.liveResolveClose} onPress={cancelLiveResolve} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <View style={styles.liveResolveCloseBtn}>
+                <MaterialCommunityIcons name="close" color="#fff" size={20} />
+              </View>
+            </TouchableOpacity>
+            <View style={styles.liveResolveWrap}>
+              {liveResolve.error ? (
+                <>
+                  <MaterialCommunityIcons name="alert-decagram-outline" color="#ff8fa3" size={46} />
+                  <Text style={styles.liveResolveTitle}>{t('直播地址解析失败')}</Text>
+                  <Text style={styles.liveResolveText}>{liveResolve.error}</Text>
+                  <View style={styles.liveResolveBtns}>
+                    <ScalePressable style={[styles.liveResolveBtn, { backgroundColor: '#ff6f91' }]} pressedScale={0.96} activeOpacity={0.85} onPress={() => resolveLiveAndOpen(liveResolve.media)}>
+                      <Text style={styles.liveResolveBtnText}>{t('重试')}</Text>
+                    </ScalePressable>
+                    <ScalePressable style={[styles.liveResolveBtnGhost, { borderColor: 'rgba(255,255,255,0.35)' }]} pressedScale={0.96} activeOpacity={0.85} onPress={cancelLiveResolve}>
+                      <Text style={styles.liveResolveBtnGhostText}>{t('关闭')}</Text>
+                    </ScalePressable>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <ActivityIndicator color="#ff6f91" size="large" />
+                  <Text style={styles.liveResolveTitle}>{t('正在解析直播地址…')}</Text>
+                  <Text style={styles.liveResolveText}>{t('首次打开需拉取最新直播流地址，请稍候；直播通常会持续几分钟')}</Text>
+                </>
+              )}
+            </View>
           </View>
         ) : null}
         <ZoomImageModal url={fullImageUrl} onClose={() => setFullImageUrl('')} />
@@ -2867,6 +2954,16 @@ const styles = StyleSheet.create({
   exitRoomFullscreenBtn: { position: 'absolute', top: 14, right: 14, zIndex: 10, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.58)' },
   exitRoomFullscreenText: { color: '#fff', fontSize: 12, fontWeight: '900' },
   roomNativeVideo: { flex: 1, backgroundColor: '#000' },
+  liveResolveClose: { position: 'absolute', top: 48, right: 14, zIndex: 10 },
+  liveResolveCloseBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' },
+  liveResolveWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, gap: 12 },
+  liveResolveTitle: { color: '#fff', fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  liveResolveText: { color: 'rgba(255,255,255,0.72)', fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  liveResolveBtns: { flexDirection: 'row', gap: 12, marginTop: 10 },
+  liveResolveBtn: { paddingHorizontal: 26, paddingVertical: 10, borderRadius: 22 },
+  liveResolveBtnText: { color: '#fff', fontSize: 14, fontWeight: '900' },
+  liveResolveBtnGhost: { paddingHorizontal: 26, paddingVertical: 10, borderRadius: 22, borderWidth: 1 },
+  liveResolveBtnGhostText: { color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '800' },
   roomModalShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   roomRankPanel: { maxHeight: '82%', padding: 14, paddingBottom: 24, borderTopLeftRadius: radii.sheet, borderTopRightRadius: radii.sheet },
   roomRankHandleWrap: { alignItems: 'center', paddingTop: 2, paddingBottom: 10 },
