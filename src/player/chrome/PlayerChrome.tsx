@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { usePlayerStore } from '../store/playerStore';
 import { PlayerFeatures } from '../types';
@@ -25,9 +26,11 @@ interface Props {
 
 /** 控制条自动隐藏间隔 */
 const CONTROLS_HIDE_MS = 3500;
+/** 触控色（全屏黑底上固定亮色，不随主题） */
+const TINT = '#ff6f91';
 
 /**
- * 唯一播放器控制层（重写核心）：B站风格顶栏 + 悬浮底坞 + 更多面板。
+ * 唯一播放器控制层（重写核心）：渐变遮罩顶栏 + 悬浮底坞（可拖进度/倍速/弹幕/全屏）+ 更多面板。
  * 所有页面共用；能力按 features 声明渲染。
  */
 export function PlayerChrome({ features = {}, extraActions = [], onClose, inline = false, onRetry }: Props) {
@@ -46,7 +49,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const rate = usePlayerStore((s) => s.rate);
   const [moreVisible, setMoreVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 进度条拖动：比例 → seek（进度条此前为纯展示不可拖——录播无法拖动定位）
+  // 进度条拖动：比例 → seek（录播定位；进度条触控区加高避免误触）
   const progTrackRef = useRef<View>(null);
   const progW = useRef(0);
   const progX = useRef(0);
@@ -80,14 +83,14 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 
   if (!source) return null;
 
-  const st = usePlayerStore.getState();
   const playing = state === 'playing';
   const isLive = source.kind === 'live';
+  const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;
 
   const togglePlay = () => {
     const s = usePlayerStore.getState();
     if (s.state === 'playing') s.setState('paused');
-    else if (s.state === 'paused') s.setState('playing');
+    else if (s.state === 'paused' || s.state === 'error') s.setState('playing');
     showControls();
   };
 
@@ -100,6 +103,11 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     const cur = usePlayerStore.getState().rate;
     const next = cur === 1 ? 1.5 : cur === 1.5 ? 2 : 1;
     usePlayerStore.getState().setRate(next);
+    showControls();
+  };
+
+  const toggleDanmaku = () => {
+    usePlayerStore.getState().toggleDanmaku();
     showControls();
   };
 
@@ -141,24 +149,26 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     }
   };
 
-  const toggleDanmaku = () => {
-    usePlayerStore.getState().toggleDanmaku();
-    showControls();
-  };
-
   return (
     <>
-      {/* 顶栏（内嵌模式不显示） */}
+      {/* 顶栏（内嵌模式不显示）：顶部渐变遮罩保证白字可读 */}
       {!inline ? (
-        <View style={[styles.topBar, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
-          <TouchableOpacity style={styles.navBtn} onPress={() => { if (onClose) onClose(); else usePlayerStore.getState().close(); }}>
-            <MaterialCommunityIcons name="chevron-down" size={22} color="#fff" />
+        <View style={[styles.topWrap, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
+          <LinearGradient colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={StyleSheet.absoluteFill} />
+          <TouchableOpacity style={styles.topBtn} onPress={() => { if (onClose) onClose(); else usePlayerStore.getState().close(); }}>
+            <MaterialCommunityIcons name="chevron-down" size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.titleWrap}>
             <Text style={styles.titleText} numberOfLines={1}>{meta.title}</Text>
+            {isLive ? (
+              <View style={styles.liveTag}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveTagText}>{t('直播')}</Text>
+              </View>
+            ) : null}
           </View>
-          <TouchableOpacity style={styles.navBtn} onPress={() => setMoreVisible(true)}>
-            <MaterialCommunityIcons name="dots-horizontal" size={20} color="#fff" />
+          <TouchableOpacity style={styles.topBtn} onPress={() => setMoreVisible(true)}>
+            <MaterialCommunityIcons name="dots-horizontal" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
       ) : null}
@@ -181,44 +191,65 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
-      {/* 底部控制坞 */}
-      <TouchableOpacity
-        activeOpacity={1}
-        style={[StyleSheet.absoluteFill, { opacity: controlsVisible ? 1 : 0 }]}
-        onPress={showControls}
-      >
-        <View style={[styles.bottomDock, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents="box-none">
-          <TouchableOpacity style={styles.dockBtn} onPress={togglePlay}>
-            <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={22} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.timeText}>{formatPlayTime(position)}</Text>
-          <View
-            ref={progTrackRef}
-            style={styles.progressTrack}
-            onLayout={(e) => {
-              progW.current = e.nativeEvent.layout.width;
-              progTrackRef.current?.measureInWindow?.((x) => { progX.current = x; });
-            }}
-            {...progPan.panHandlers}
-          >
-            <View style={[styles.progressFill, { width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }]} />
+      {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行） */}
+      <View style={[StyleSheet.absoluteFill, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
+          style={styles.bottomShade}
+        />
+        <View style={styles.dockWrap} pointerEvents="box-none">
+          {/* 进度行：当前时间 —— 可拖进度 —— 总时间（直播仅显示 直播） */}
+          <View style={styles.progressRow}>
+            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(position)}</Text> : null}
+            <View
+              ref={progTrackRef}
+              style={styles.progressTouch}
+              onLayout={(e) => {
+                progW.current = e.nativeEvent.layout.width;
+                progTrackRef.current?.measureInWindow?.((x) => { progX.current = x; });
+              }}
+              {...progPan.panHandlers}
+            >
+              <View style={styles.progressTrackBg}>
+                <View style={[styles.progressFill, { width: `${progRatio * 100}%` }]} />
+              </View>
+              <View style={[styles.progressThumb, { left: `${progRatio * 100}%` }]} />
+            </View>
+            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(duration)}</Text> : <Text style={styles.timeText}>{t('直播')}</Text>}
           </View>
-          <Text style={styles.timeText}>{isLive ? t('直播') : formatPlayTime(duration)}</Text>
-          {features.rate && !isLive && !useWebKernel ? (
-            <TouchableOpacity style={styles.dockBtn} onPress={cycleRate}>
-              <Text style={styles.rateText}>{rate}x</Text>
+          {/* 控制行：播放/暂停（主按钮）+ 右侧功能 */}
+          <View style={styles.ctrlRow}>
+            <TouchableOpacity style={styles.playBtn} onPress={togglePlay} activeOpacity={0.85}>
+              <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={26} color="#fff" style={!playing ? { marginLeft: 2 } : undefined} />
             </TouchableOpacity>
-          ) : null}
-          {features.danmaku && !useWebKernel ? (
-            <TouchableOpacity style={styles.dockBtn} onPress={toggleDanmaku}>
-              <MaterialCommunityIcons name={danmakuOn ? 'comment-text' : 'comment-text-outline'} size={20} color={danmakuOn ? '#ff6f91' : '#fff'} />
-            </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity style={styles.dockBtn} onPress={toggleFullscreen}>
-            <MaterialCommunityIcons name={fullscreen ? 'fullscreen-exit' : 'fullscreen'} size={20} color="#fff" />
-          </TouchableOpacity>
+            <Text style={styles.ctrlHintText} numberOfLines={1}>
+              {source.audioOnly ? t('纯音频') : ''}
+            </Text>
+            <View style={{ flex: 1 }} />
+            {features.rate && !isLive && !useWebKernel ? (
+              <TouchableOpacity style={styles.ctrlBtn} onPress={cycleRate} activeOpacity={0.75}>
+                <Text style={styles.rateText}>{rate}x</Text>
+              </TouchableOpacity>
+            ) : null}
+            {features.danmaku && !useWebKernel ? (
+              <TouchableOpacity style={styles.ctrlBtn} onPress={toggleDanmaku} activeOpacity={0.75}>
+                <MaterialCommunityIcons
+                  name={danmakuOn ? 'comment-text-multiple' : 'comment-text-multiple-outline'}
+                  size={20}
+                  color={danmakuOn ? TINT : 'rgba(255,255,255,0.9)'}
+                />
+              </TouchableOpacity>
+            ) : null}
+            {!inline ? (
+              <TouchableOpacity style={styles.ctrlBtn} onPress={toggleFullscreen} activeOpacity={0.75}>
+                <MaterialCommunityIcons name={fullscreen ? 'fullscreen-exit' : 'fullscreen'} size={21} color="rgba(255,255,255,0.92)" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
-      </TouchableOpacity>
+      </View>
 
       {/* 更多面板 */}
       <Modal visible={moreVisible} transparent animationType="slide" onRequestClose={() => setMoreVisible(false)}>
@@ -263,33 +294,49 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 }
 
 const styles = StyleSheet.create({
-  topBar: {
+  topWrap: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
     flexDirection: 'row', alignItems: 'center',
-    paddingTop: 44, paddingBottom: 14, paddingHorizontal: 10,
-    backgroundColor: 'rgba(0,0,0,0.34)',
+    paddingTop: 40, paddingBottom: 20, paddingHorizontal: 6,
   },
-  navBtn: {
-    width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+  topBtn: {
+    width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
   },
-  titleWrap: { flex: 1, marginHorizontal: 10, justifyContent: 'center' },
-  titleText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  bottomDock: {
-    position: 'absolute', left: 8, right: 8, bottom: 8, zIndex: 30,
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 6, paddingHorizontal: 6,
-    borderRadius: 22, backgroundColor: 'rgba(16,16,18,0.62)',
+  titleWrap: { flex: 1, marginHorizontal: 6, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
+  titleText: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  liveTag: {
+    flexDirection: 'row', alignItems: 'center', marginLeft: 8,
+    backgroundColor: 'rgba(255,111,145,0.22)', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2,
   },
-  dockBtn: {
-    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: TINT, marginRight: 4 },
+  liveTagText: { color: '#ffd3dd', fontSize: 10, fontWeight: '700' },
+  bottomShade: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: 190,
   },
-  timeText: { color: 'rgba(255,255,255,0.85)', fontSize: 10, marginHorizontal: 4 },
-  progressTrack: {
-    flex: 1, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.25)', overflow: 'hidden',
+  dockWrap: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 31,
+    paddingHorizontal: 14, paddingBottom: 12,
   },
-  progressFill: { height: 3, backgroundColor: '#ff6f91' },
-  rateText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  progressRow: { flexDirection: 'row', alignItems: 'center' },
+  timeText: { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontVariant: ['tabular-nums'], marginHorizontal: 6, minWidth: 34, textAlign: 'center' },
+  progressTouch: {
+    flex: 1, height: 26, justifyContent: 'center', marginHorizontal: 2,
+  },
+  progressTrackBg: { height: 3, borderRadius: 1.5, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
+  progressFill: { height: 3, backgroundColor: TINT },
+  progressThumb: {
+    position: 'absolute', top: 9, width: 8, height: 8, borderRadius: 4,
+    marginLeft: -4, backgroundColor: '#fff',
+  },
+  ctrlRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  playBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  ctrlHintText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginLeft: 8, flexShrink: 1 },
+  ctrlBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  rateText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   errorWrap: {
     position: 'absolute', left: 24, right: 24, top: '42%', zIndex: 40,
     alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 12, padding: 14,
@@ -297,7 +344,7 @@ const styles = StyleSheet.create({
   errorText: { color: '#fff', fontSize: 13, textAlign: 'center', lineHeight: 19 },
   errorBtn: {
     marginTop: 10, paddingHorizontal: 18, paddingVertical: 7, borderRadius: 16,
-    backgroundColor: '#ff6f91',
+    backgroundColor: TINT,
   },
   errorBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   modalShade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
