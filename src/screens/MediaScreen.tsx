@@ -563,7 +563,7 @@ export default function MediaScreen() {
   const [videoRotate, setVideoRotate] = useState(0);
   // 用户是否手动切过方向：手动后 onLoad 不再自动覆盖（尊重用户选择）
   const manualOrientRef = useRef(false);
-  const [playing, setPlaying] = useState<{ url: string; urls: string[]; title: string; cover?: string; item: any; isLive: boolean; needsVlc: boolean; resolving?: boolean } | null>(null);
+  const [playing, setPlaying] = useState<{ url: string; urls: string[]; title: string; cover?: string; item: any; isLive: boolean; needsVlc: boolean; resolving?: boolean; position?: number } | null>(null);
   // 续播位置：打开回放时读取上次进度，播放中由 WebView 回传进度落盘
   const [webResumeTime, setWebResumeTime] = useState(0);
   const [giftVisible, setGiftVisible] = useState(false);
@@ -878,6 +878,8 @@ export default function MediaScreen() {
             item: { liveId: lid || '', title, liveCover: cover },
             isLive,
             needsVlc: streamNeedsProxy(directUrl),
+            // 大小窗切换续播：小窗回传 playPosition
+            position: Number(route.params?.playPosition) || 0,
           });
           if (!isLive && tab !== 'vod') switchTab('vod');
           return;
@@ -1548,7 +1550,7 @@ export default function MediaScreen() {
             meta={{ title: playing.title, cover: playing.cover }}
             danmaku={playing.isLive ? { type: 'poll', liveId: String(playing.item?.liveId || playing.item?.id || '') } : { type: 'lrc', lrcUrl: '' }}
             features={{ rate: !playing.isLive, danmaku: true, kernelSwitch: true, resume: !playing.isLive }}
-            resumeAt={webResumeTime}
+            resumeAt={webResumeTime || (playing?.position || 0)}
             extraActions={[
               ...(playing.isLive ? [{ key: 'gift', icon: 'gift', label: t('礼物'), onPress: () => openGiftPanel() }] : []),
               { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: () => openRankPanel() },

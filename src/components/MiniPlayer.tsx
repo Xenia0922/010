@@ -97,6 +97,8 @@ export function MiniPlayer() {
       playTitle: info.backTo.playTitle,
       playCover: info.backTo.playCover,
       playNonce: Date.now(),
+      // 小窗 → 大窗续播：传当前播放位置（仅录播）
+      ...(info.backTo.mode !== 'live' ? { playPosition: useMiniPlayerStore.getState().currentPos } : {}),
     });
   }, [info, close, navigation]);
 
@@ -244,6 +246,11 @@ export function MiniPlayer() {
               seekedRef.current = true;
               videoRef.current.seek(t);
             }
+          }}
+          // 记录小窗实时进度（回大窗续播；仅录播）
+          onProgress={(e: any) => {
+            const t = Number(e?.currentTime) || 0;
+            if (!info.isLive && t > 0) useMiniPlayerStore.getState().setCurrentPos(t);
           }}
           onEnd={() => setPlaying(false)}
           onError={(event) => {

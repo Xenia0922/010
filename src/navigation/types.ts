@@ -32,7 +32,7 @@ export type RootStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
-  Media: { mode?: 'live' | 'vod'; playLiveId?: string; playTitle?: string; playCover?: string; playUrl?: string; playNonce?: number; fromRoom?: boolean } | undefined;
+  Media: { mode?: 'live' | 'vod'; playLiveId?: string; playTitle?: string; playCover?: string; playUrl?: string; playNonce?: number; fromRoom?: boolean; playPosition?: number } | undefined;
   Rooms: undefined;
   Settings: undefined;
 };
