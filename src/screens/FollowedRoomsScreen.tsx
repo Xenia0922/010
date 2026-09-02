@@ -582,15 +582,15 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
       // 消息明示回放（录播卡）
       return { ...media, liveId, title, url: ownUrl, isLive: false, needsVlc: streamNeedsProxy(ownUrl) };
     }
-    // m3u8/mp4 二义（直播流与回放流同形）：先查「正在直播」列表二次验证；查询失败/无 liveId
-    // 时回退 URL 形态判定（直播优先——避免把直播流误判成录播导致「放不了」）
-    let isLive = isLiveStreamUrl(lower);
+    // m3u8/mp4 二义：默认按「回放」（录播可拖进度条）；直播列表(record:false)命中才视为直播。
+    // 直播(rtmp/flv) 已在上方直接返回 live；Exo 直播状态已修复可正常出画面，因此不再为防黑屏牺牲录播判定
+    let isLive = false;
     if (liveId) {
       try {
         const found = await findLiveItem(await pocketApi.getLiveList({ record: false, debug: true, next: 0 }), liveId);
         isLive = !!found;
       } catch {
-        isLive = isLiveStreamUrl(lower); // 查询失败：直播优先（保证直播可放）
+        isLive = false; // 查询失败按回放处理（录播优先，进度条可用；真直播多为 rtmp/flv 不受影响）
       }
     }
     return { ...media, liveId, title, url: ownUrl, isLive, needsVlc: streamNeedsProxy(ownUrl) };
@@ -644,9 +644,9 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
           if (state === 'replay') isLive = false;
           else if (state === 'live') isLive = true;
           else {
-            // 详情无明确状态位：URL 兜底；消息明示回放且非 rtmp 推流时按录播优先
-            isLive = isLiveStreamUrl(urls[0]);
-            if (isLive && media.replayHint && !urls[0].toLowerCase().startsWith('rtmp://')) isLive = false;
+            // 详情无明确状态位：rtmp/flv 视为直播；m3u8/mp4 一律按回放（录播可拖，防录播套直播控件）
+            const u0 = String(urls[0] || '').toLowerCase();
+            isLive = u0.startsWith('rtmp://') || u0.includes('.flv');
           }
         }
         return {
