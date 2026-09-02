@@ -361,7 +361,8 @@ export default function RoomRadioScreen() {
                 {/* 控制行：播放/暂停 56 tint 底白字 + 停止/重播 36 fill2 底 */}
                 <View style={styles.controlsRow}>
                   <ScalePressable
-                    onPress={playing ? stopRadio : () => setPlaying(true)}
+                    // Y9: 播放中 = 真正暂停（保留 radioUrl/控制条，可再播放），停止走下方停止键
+                    onPress={playing ? () => setPlaying(false) : () => setPlaying(true)}
                     pressedScale={0.9}
                     style={[styles.primaryCtrl, { backgroundColor: palette.tint, ...shadows.sm }]}
                     activeOpacity={0.8}

@@ -731,8 +731,9 @@ function roomMedia(item: any): RoomMedia | null {
   if (!url && !liveId) {
     const t = String(text || '').toLowerCase();
     if (t.includes('[图片]') || t.includes('[语音]') || t.includes('[视频]') || t.includes('[链接]') || t.includes('[直播]')) {
-      // It's a media placeholder - don't show raw text, render as empty media
-      url = t; // mark as "has media" so we don't return null
+      // Y20: 占位文本不是可播放媒体——return null 走普通文本气泡，
+      // 不再把 '[图片]'/'[直播]' 当 url（此前 classifyMedia 后渲染成破图/误调 Linking）
+      return null;
     }
   }
   if (!url && !liveId) return null;
@@ -1088,6 +1089,7 @@ export default function FollowedRoomsScreen() {
     bgOpacity.setValue(0);
   }, [roomMeta.bg, bgOpacity]);
   const activeChannelRef = useRef('');
+  const roomSeqRef = useRef(0); // Y22: 进房序号（快速切房丢弃慢响应）
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const loadingMoreMessagesRef = useRef(false);
   // 实时刷新进行中标志：与 loadMore 互斥，避免两者同时 setRoomMessages 造成列表重排/滚动弹回
@@ -1408,7 +1410,14 @@ export default function FollowedRoomsScreen() {
     return () => { active = false; clearInterval(id); };
   }, [selectedRoom]);
 
-  useEffect(() => { loadFollowed(true); }, [loadFollowed]);
+  // Y23: 关注列表在 members 就绪后只拉一次（loadFollowed 依赖 members，随其变化会反复重拉）
+  const followedFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!members.length || followedFetchedRef.current) return;
+    followedFetchedRef.current = true;
+    loadFollowed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members.length]);
 
   // mode: 'internal' = 同房间内切换大/小房间或成员/粉丝发言（同一成员，标题/背景不变，必须秒切、无骨架）
   //       'enter'    = 从房间列表点成员进入（跨成员/跨房间，保留骨架隔离旧房间残留）
@@ -1421,6 +1430,7 @@ export default function FollowedRoomsScreen() {
       return;
     }
     setSelectedRoom(room);
+    const openSeq = ++roomSeqRef.current;
     const channelChanged = activeChannelRef.current !== channelId;
     activeChannelRef.current = channelId;
     // internal：同房间内切换大/小房间或成员/粉丝发言（同一成员、同一背景）。
@@ -1465,6 +1475,8 @@ export default function FollowedRoomsScreen() {
       const list = unwrapList(res, ['content.messageList', 'content.message', 'content.messages', 'content.list', 'data.messageList', 'data.message', 'messageList', 'message', 'messages', 'list']);
       const sorted = sortMessagesNewestFirst(list.filter(Boolean));
       diagnoseUndefined(sorted, 'OPEN');
+      // Y22: 进房竞态——用户已切到别的房间/模式，丢弃慢响应，避免旧房间消息覆盖新房间
+      if (openSeq !== roomSeqRef.current) return;
       setRoomMessages(sorted);
       setRoomLoadedOnce(true);
       setRoomMsgError('');
@@ -1483,6 +1495,8 @@ export default function FollowedRoomsScreen() {
         // 小房间 room/info 服务端 2001 无权限（实测）→ 塞纳河 server/detail 拿 channelInfoList 房间名 + 背景墙图
         pocketApi.getRoomMeta(channelId, nextMode === 'small' ? room.channelId : undefined, room.serverId)
           .then((meta) => {
+            // Y22: 期间已切房（seq 过期或 channelId 变化）则丢弃，避免旧房间标题/背景覆盖
+            if (openSeq !== roomSeqRef.current || activeChannelRef.current !== channelId) return;
             roomMetaCache.current[channelId] = meta;
             setRoomMeta({ ...meta, bg: getBgDisplayUri(meta.bg) });
             if (meta.bg) ensureBgCached(meta.bg); // 后台落盘，下次进房间直接本地显示

@@ -287,7 +287,11 @@ function privateMessageMedia(msg: any): MediaInfo {
 function oldestFirst<T>(list: T[], timeOf: (item: T) => number): T[] { return list.slice().sort((a, b) => timeOf(a) - timeOf(b)); }
 
 function flipTypeName(value: any) { const id = Number(value); if (id === 1) return translate('文字'); if (id === 2) return translate('语音'); if (id === 3) return translate('视频'); return translate('类型{value}', { value: value || '' }); }
-function lowestPrice(item: any) { return Math.min(...[item.normalCost, item.privateCost, item.anonymityCost].map(Number).filter((v: number) => isFinite(v) && v >= 0)); }
+function lowestPrice(item: any) {
+  const arr = [item.normalCost, item.privateCost, item.anonymityCost].map(Number).filter((v: number) => isFinite(v) && v >= 0);
+  // Y21: 全部非法时 Math.min(...[]) = Infinity → 兜底 0
+  return arr.length ? Math.min(...arr) : 0;
+}
 
 export default function PrivateMessagesScreen() {
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
