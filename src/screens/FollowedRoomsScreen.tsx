@@ -1852,10 +1852,9 @@ export default function FollowedRoomsScreen() {
       const mine = role === 'mine';
       const idol = role === 'idol';
       const msgProfile = senderProfile(item, room);
-      // 成员(idol)自己发言：优先用成员库最新头像（room.avatar），
-      // 服务端消息自带的 user.avatar 多为旧公式照（例：徐钰涵 2023 官方档案照 vs 库 2025 头像）
+      // 成员(idol)发言头像：优先用 API（消息携带）的真实头像；成员库 room.avatar 多为公式照，仅兜底
       const profile = idol
-        ? { id: room.id, name: (msgProfile.name || '').trim() || shortName(room), avatar: room.avatar || msgProfile.avatar }
+        ? { id: room.id, name: (msgProfile.name || '').trim() || shortName(room), avatar: msgProfile.avatar || room.avatar }
         : msgProfile;
       const media = roomMedia(item);
       const gift = roomGiftInfo(item);
