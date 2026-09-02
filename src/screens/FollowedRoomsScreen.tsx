@@ -1877,23 +1877,38 @@ export default function FollowedRoomsScreen() {
             {/* 组首显示名字 + HH:mm；组内不重复 */}
             {row.groupStart ? (
               <View style={[styles.msgMetaLine, mine && styles.msgMetaLineMine]}>
-                <Text style={[styles.msgSender, { color: idol ? palette.tint : mine ? palette.tint : palette.labelSecondary }]} numberOfLines={1}>
-                  {profile.name}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  {idol ? <MaterialCommunityIcons name="crown" size={11} color={palette.tint} /> : null}
+                  <Text style={[styles.msgSender, { color: idol ? palette.tint : mine ? palette.tint : palette.labelSecondary }]} numberOfLines={1}>
+                    {profile.name}
+                  </Text>
+                </View>
                 <Text style={[styles.msgTime, { color: palette.labelTertiary }]}>
                   {formatTimestamp(item.msgTime).slice(11, 16)}
                 </Text>
               </View>
             ) : null}
-            <View style={[styles.msgBubble, idol && styles.msgBubbleIdol, mine && styles.msgBubbleMine, !row.groupStart && styles.msgBubbleMid, { backgroundColor: idol ? palette.tint : mine ? palette.tint : palette.surfaceGlass, borderColor: idol || mine ? 'rgba(255,255,255,0.38)' : palette.innerStroke, borderWidth: !row.groupStart ? 0 : StyleSheet.hairlineWidth }]}>
+            <View
+              style={[
+                styles.msgBubble,
+                !row.groupStart && styles.msgBubbleMid,
+                row.groupStart && !mine && styles.msgBubbleTailLeft,
+                row.groupStart && mine && styles.msgBubbleTailRight,
+                {
+                  backgroundColor: mine ? palette.tint : idol ? palette.tintSoft : palette.surfaceGlass,
+                  borderColor: idol ? 'rgba(232,62,140,0.35)' : palette.hairline,
+                  borderWidth: mine ? 0 : StyleSheet.hairlineWidth,
+                },
+              ]}
+            >
               {replyName || replyQuoted ? (
-                <View style={[styles.replyCard, { backgroundColor: (idol || mine) ? 'rgba(255,255,255,0.18)' : palette.fill2, borderLeftColor: (idol || mine) ? 'rgba(255,255,255,0.85)' : palette.tint }]}>
-                  {replyName ? <Text style={[styles.replyName, { color: (idol || mine) ? palette.onTint : palette.tint }]} numberOfLines={1}>{replyName}</Text> : null}
-                  {replyQuoted ? <Text style={[styles.replyText, { color: (idol || mine) ? 'rgba(255,255,255,0.85)' : palette.labelSecondary }]} numberOfLines={3}>{replyQuoted}</Text> : null}
+                <View style={[styles.replyCard, { backgroundColor: mine ? 'rgba(255,255,255,0.18)' : idol ? palette.tintSoft : palette.fill2, borderLeftColor: mine ? 'rgba(255,255,255,0.85)' : palette.tint }]}>
+                  {replyName ? <Text style={[styles.replyName, { color: mine ? palette.onTint : idol ? palette.tint : palette.tint }]} numberOfLines={1}>{replyName}</Text> : null}
+                  {replyQuoted ? <Text style={[styles.replyText, { color: mine ? 'rgba(255,255,255,0.85)' : idol ? palette.labelSecondary : palette.labelSecondary }]} numberOfLines={3}>{replyQuoted}</Text> : null}
                 </View>
               ) : null}
               {bubbleText ? (
-                <Text style={[styles.msgBody, (idol || mine) && styles.msgBodyHighlight, (idol || mine) ? { color: palette.onTint } : { color: palette.labelSecondary }]}>
+                <Text style={[styles.msgBody, (mine || idol) && styles.msgBodyHighlight, { color: mine ? palette.onTint : idol ? palette.tint : palette.labelSecondary }]}>
                   {bubbleText}
                 </Text>
               ) : null}
@@ -2780,10 +2795,10 @@ const styles = StyleSheet.create({
   msgMetaLineMine: { justifyContent: 'flex-end' },
   msgSender: { fontSize: 12, fontWeight: '600', maxWidth: 150 },
   msgTime: { fontSize: 10 },
-  msgBubble: { padding: 10, paddingHorizontal: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth },
-  msgBubbleMid: { borderRadius: 6 },
-  msgBubbleIdol: { borderTopLeftRadius: 6 },
-  msgBubbleMine: { borderTopRightRadius: 6 },
+  msgBubble: { paddingVertical: 9, paddingHorizontal: 13, borderRadius: 18 },
+  msgBubbleMid: { borderTopLeftRadius: 6, borderTopRightRadius: 6 },
+  msgBubbleTailLeft: { borderBottomLeftRadius: 6 },
+  msgBubbleTailRight: { borderBottomRightRadius: 6 },
   msgBody: { fontSize: 15, lineHeight: 22 },
   msgBodyHighlight: {},
   giftCard: { marginTop: 8, minWidth: 210, padding: 10, borderRadius: radiiAlias.cardCompact, backgroundColor: 'rgba(255,240,246,0.88)', borderWidth: 1, borderColor: 'rgba(255,111,145,0.24)', flexDirection: 'row', alignItems: 'center', gap: 10 },
