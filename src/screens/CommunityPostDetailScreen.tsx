@@ -87,6 +87,8 @@ export default function CommunityPostDetailScreen() {
       const res = await pocketApi.getArea48PostDetails(postId);
       const content = res?.content || {};
       const normalized = normalizeCommunityPost(content);
+      // Y24: 解析失败不能三态全空白（此前无错误/空态 → 头部整块空白）
+      if (!normalized) { setDetailError(t('帖子解析失败')); setPost(null); return; }
       setPost(normalized);
     } catch (e: any) {
       setDetailError(errorMessage(e));
@@ -284,7 +286,8 @@ export default function CommunityPostDetailScreen() {
       />
 
       {/* 底部评论输入条 */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Y34: Android 键盘遮挡评论输入条 → height */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.composeBar, { backgroundColor: palette.surfaceGlassStrong, borderTopColor: palette.hairline }]}>
           <TextInput
             style={[styles.composeInput, { backgroundColor: palette.fill2, color: palette.label }]}

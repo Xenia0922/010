@@ -19,6 +19,7 @@ import { errorMessage, unwrapList } from '../utils/data';
 import { Member, TripItem } from '../types';
 import { usePalette } from '../theme';
 import { useI18n } from '../i18n';
+import { useUiStore } from '../store';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 function parseTripDate(raw: string): { date: string; time: string } {
@@ -28,6 +29,7 @@ function parseTripDate(raw: string): { date: string; time: string } {
 }
 
 function normalizeTripItem(raw: any, index: number): TripItem | null {
+  if (!raw || typeof raw !== 'object') return null; // Y27: unwrapList BFS 可能带 null 元素
   const id = String(raw.id || raw.tripId || raw.dataId || `trip-${index}`);
   const showDate = String(raw.showDate || raw.show_date || raw.date || '');
   const showTime = String(raw.showTime || raw.show_time || raw.time || '');
@@ -232,7 +234,7 @@ export default function TripScreen() {
             {item.ticketUrl ? (
               <ScalePressable
                 style={styles.linkRow}
-                onPress={() => Linking.openURL(item.ticketUrl)}
+                onPress={() => Linking.openURL(String(item.ticketUrl || '')).catch(() => useUiStore.getState().showToast(t('无法打开该链接')))}
                 activeOpacity={0.7}
                 pressedScale={0.98}
               >

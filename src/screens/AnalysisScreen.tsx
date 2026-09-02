@@ -36,7 +36,9 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 function msgTime(item: any) {
-  return Number(item.msgTime || item.ctime || item.time || item.timestamp || item.createTime || 0);
+  const t = Number(item.msgTime || item.ctime || item.time || item.timestamp || item.createTime || 0);
+  // Y25: 秒级(10位)时间戳 → 毫秒（否则日期分布落 1970、过期恒判）
+  return t > 0 && t < 10000000000 ? t * 1000 : t;
 }
 
 function msgDate(item: any) {

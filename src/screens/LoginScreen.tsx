@@ -182,6 +182,7 @@ export default function LoginScreen() {
   const [code, setCode] = useState('');
   const [manualToken, setManualToken] = useState(settings.p48Token || '');
   const [qrKey, setQrKey] = useState('');
+  const activePollKeyRef = useRef(''); // Y3: 当前活跃轮询的二维码 key（刷新二维码时旧轮询据此退出）
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [biliStatus, setBiliStatus] = useState('');
@@ -330,11 +331,14 @@ export default function LoginScreen() {
   };
 
   const pollBiliLogin = async (key: string) => {
+    // Y3: 抢占——刷新二维码会带新 key 启动新轮询；旧轮询被抢占即退出（此前靠从未赋值的 qrKey，永不退出）
+    if (activePollKeyRef.current && activePollKeyRef.current !== key) return;
+    activePollKeyRef.current = key;
     let pollWarned = false;
     for (let i = 0; i < 30; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       if (!pollingRef.current) return; // abort if unmounted
-      if (qrKey && key !== qrKey) return;
+      if (activePollKeyRef.current !== key) return; // 已被更新的二维码轮询抢占
       try {
         const res = await bilibiliApi.pollQrCode(key);
         if (res.data.code === 0) {

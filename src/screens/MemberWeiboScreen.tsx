@@ -24,6 +24,7 @@ import { Member } from '../types';
 import { usePalette } from '../theme';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useI18n } from '../i18n';
+import { useUiStore } from '../store';
 import { Skeleton } from '../components/Skeleton';
 
 interface WbItem {
@@ -66,7 +67,9 @@ function parseWbExt(raw: any) {
 
 function normalizeItem(raw: any, index: number): WbItem | null {
   const ext = parseWbExt(raw?.extInfo || raw?.bodys || raw?.msgContent);
-  const time = Number(raw?.msgTime || raw?.ctime || 0);
+  const rawTime = Number(raw?.msgTime || raw?.ctime || 0);
+  // Y25: 秒级(10位)时间戳 → 毫秒
+  const time = rawTime > 0 && rawTime < 10000000000 ? rawTime * 1000 : rawTime;
   if (!ext.content && !ext.imageUrls.length) return null;
   return { key: String(raw?.msgId || raw?.id || `wb-${index}`), ...ext, time: Number.isFinite(time) ? time : 0 };
 }
@@ -215,10 +218,10 @@ export default function MemberWeiboScreen() {
         {item.jumpUrl ? (
           <ScalePressable
             style={[styles.linkBtn, { backgroundColor: palette.tintSoft }]}
-            onPress={() => Linking.openURL(item.jumpUrl)}
+            onPress={() => Linking.openURL(String(item.jumpUrl || '')).catch(() => useUiStore.getState().showToast(t('无法打开该链接')))}
             pressedScale={0.97}
           >
-            <MaterialCommunityIcons name="external-link" size={14} color={palette.tint} style={styles.linkIcon} />
+            <MaterialCommunityIcons name="open-in-new" size={14} color={palette.tint} style={styles.linkIcon} />
             <Text style={[styles.linkBtnText, { color: palette.tint }]}>{t('查看微博原文')}</Text>
           </ScalePressable>
         ) : null}
@@ -259,7 +262,9 @@ export default function MemberWeiboScreen() {
           </Text> : null
         }
         ListEmptyComponent={
-          error ? (
+          loading && !items.length ? (
+            <CenterSpinner />
+          ) : error ? (
             <ErrorState title={t('加载失败')} hint={error} onAction={() => fetchData(true)} />
           ) : (
             <EmptyState

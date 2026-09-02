@@ -51,6 +51,7 @@ export default function MeleeRankScreen() {
   const [error, setError] = useState('');
   const nextIdRef = useRef('');
   const hasMoreRef = useRef(false);
+  const reqIdRef = useRef(0); // Y31: 请求序号（切榜/切周时丢弃过期响应）
 
   const switchMode = (m: ViewMode) => {
     setRanks([]);
@@ -62,6 +63,7 @@ export default function MeleeRankScreen() {
   };
 
   const loadRank = useCallback(async () => {
+    const rid = ++reqIdRef.current;
     setLoading(true);
     setError('');
     try {
@@ -83,17 +85,21 @@ export default function MeleeRankScreen() {
         if (!selectedWeekRef.current) setSelectedWeek(ws[ws.length - 1]);
       }
       const list = extractRankList(data);
+      // Y31: 过期响应丢弃（期间已切榜/切周）
+      if (rid !== reqIdRef.current) return;
       setRanks(list);
       // 分页游标：getMeleeRankPage / getMeleeYearRankPage 支持 nextId
       const nextId = String(data?.nextId || data?.next || '');
       nextIdRef.current = nextId;
       hasMoreRef.current = !!nextId && list.length > 0;
-      if (!list.length) setError(mode === 'year' ? t('暂无年榜数据') : t('暂无排名数据'));
+      // Y31: 空数据不 setError（否则错误态与空态同时渲染）——列表自显空态
+      if (rid !== reqIdRef.current) return;
     } catch (e: any) {
+      if (rid !== reqIdRef.current) return; // Y31
       setError(errorMessage(e));
       setRanks([]);
     } finally {
-      setLoading(false);
+      if (rid === reqIdRef.current) setLoading(false);
     }
   }, [mode, t]);
 

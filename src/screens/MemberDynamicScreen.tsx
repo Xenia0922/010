@@ -192,7 +192,9 @@ export default function MemberDynamicScreen() {
           </Text> : null
         }
         ListEmptyComponent={
-          error ? (
+          loading && !items.length ? (
+            <CenterSpinner />
+          ) : error ? (
             <ErrorState title={t('加载失败')} hint={error} onAction={() => refresh()} />
           ) : (
             <EmptyState

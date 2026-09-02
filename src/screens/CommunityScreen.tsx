@@ -19,6 +19,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   KeyboardAvoidingView,
+  RefreshControl,
   Modal,
   Platform,
   ScrollView,
@@ -197,6 +198,16 @@ export default function CommunityScreen() {
       <PerfFlatList
         data={items}
         keyExtractor={(item) => item.postId}
+        refreshControl={
+          // Y33: 空态文案写「下拉刷新」但此前无 RefreshControl——补上（下拉 = 重置刷新）
+          <RefreshControl
+            refreshing={loading && items.length > 0}
+            onRefresh={() => { if (!loadingRef.current) refresh(); }}
+            tintColor={palette.tint}
+            colors={[palette.tint]}
+            progressBackgroundColor={palette.surface}
+          />
+        }
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 88 }]}
         initialNumToRender={10}
         onEndReached={() => { if (hasMore && !loadingRef.current) loadMore(); }}
