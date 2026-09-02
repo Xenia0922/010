@@ -84,6 +84,15 @@ function requestJson<T>(url: string, options: RequestOptions = {}): Promise<T> {
     const controller = new AbortController();
     const timeout = options.timeout ?? (method === 'GET' ? 10000 : 15000);
     const timer = setTimeout(() => controller.abort(), timeout);
+    // 外部 signal 也要生效：外部中止时联动内部 controller（否则 timeout 形同虚设）
+    let extAbort: (() => void) | null = null;
+    if (options.signal) {
+      if (options.signal.aborted) controller.abort();
+      else {
+        extAbort = () => controller.abort();
+        options.signal.addEventListener('abort', extAbort, { once: true });
+      }
+    }
 
     try {
       const headers: Record<string, string> = {
@@ -104,6 +113,7 @@ function requestJson<T>(url: string, options: RequestOptions = {}): Promise<T> {
       });
 
       clearTimeout(timer);
+      if (extAbort && options.signal) options.signal.removeEventListener('abort', extAbort);
       const text = await res.text();
       const body = parseResponse(text);
 

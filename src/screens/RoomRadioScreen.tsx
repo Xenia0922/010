@@ -19,7 +19,7 @@ import { errorMessage, pickText } from '../utils/data';
 import pocketApi from '../api/pocket48';
 import { resolveMemberRooms } from '../services/roomMapCache';
 import { useMemberStore } from '../store';
-import { LiveExoView, startRadioForeground, stopRadioForeground, onRadioStopRequested } from '../native/LivePlayer';
+import { LiveExoView, startRadioForeground, stopRadioForeground, onRadioStopRequested, onRadioControlRequested } from '../native/LivePlayer';
 import { ensureNotificationPermission } from '../utils/notifications';
 import { usePalette, makeShadows } from '../theme';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -222,11 +222,19 @@ export default function RoomRadioScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 通知栏「停止」→ 停播；离开页面时清理保活服务（避免幽灵通知）
+  // 通知栏「停止/播放暂停/上一首/下一首」→ 电台只处理 stop（通知实际为媒体四键，stop=停播）
   useEffect(() => {
-    const off = onRadioStopRequested(() => stopRadio());
+    const offStop = onRadioStopRequested(() => stopRadio());
+    const offCtrl = onRadioControlRequested((action) => {
+      if (action === 'stop') stopRadio();
+      else if (action === 'play_pause') {
+        // 电台通知的暂停/继续：本地 Video paused 切换
+        setPlaying((p) => !p);
+      }
+    });
     return () => {
-      off();
+      offStop();
+      offCtrl();
       // R2: 卸载时清 5 分钟换流定时器（此前仅 stopRadio 清理 → 泄漏 + 卸载后仍 setRadioUrl）
       if (refreshTimer.current) {
         clearInterval(refreshTimer.current);

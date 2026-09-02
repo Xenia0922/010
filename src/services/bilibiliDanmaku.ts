@@ -210,7 +210,7 @@ export class BilibiliDanmaku {
     this.heartbeatTimer = setInterval(() => {
       try {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-          this.ws.send(encodePacket(2, '[object Object]'));
+          this.ws.send(encodePacket(2, '{}')); // 心跳包需合法 JSON 文本（原传 [object Object] 会被 B站忽略/断连）
         }
       } catch {
         /* ignore */
