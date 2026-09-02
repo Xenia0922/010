@@ -547,6 +547,18 @@ function roomTapIsVod(next: RoomMedia): boolean {
   return !next.isLive;
 }
 
+/** 直播/回放列表短缓存：同一房间短时间内的多次「抓流比对」只打一次接口 */
+const LIVE_LIST_CACHE_TTL = 40 * 1000;
+const liveListCache: Record<string, { t: number; res: any }> = {};
+async function cachedLiveList(record: boolean, page = 0, next = 0): Promise<any> {
+  const key = `r:${record ? 1 : 0}:p:${page}:n:${next}`;
+  const hit = liveListCache[key];
+  if (hit && Date.now() - hit.t < LIVE_LIST_CACHE_TTL) return hit.res;
+  const res = await pocketApi.getLiveList({ record, debug: true, page, next });
+  liveListCache[key] = { t: Date.now(), res };
+  return res;
+}
+
 /** 从已拉取的直播/录播详情判断当前状态。
  *  口袋 48 接口的事实字段：录播详情带 content.msgFilePath / content.lrcUrl（LRC 弹幕文件，
  *  见 pocket48.getLiveLrc 的既有用法），直播详情带 isLiving / living / isEnd 等状态位。
@@ -601,7 +613,7 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
     let isLive = false;
     if (liveId) {
       try {
-        const found = await findLiveItem(await pocketApi.getLiveList({ record: false, debug: true, next: 0 }), liveId);
+        const found = await findLiveItem(await cachedLiveList(false, 0, 0), liveId);
         isLive = !!found;
       } catch {
         isLive = false; // 查询失败按回放处理（录播优先，进度条可用；真直播多为 rtmp/flv 不受影响）
@@ -613,20 +625,13 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
   if (liveId) {
     attempts.push({ label: 'detail', run: () => pocketApi.getLiveOne(liveId) });
     attempts.push({ label: 'detail', run: () => pocketApi.getOpenLiveOne(liveId) });
-    attempts.push({ label: 'live', run: async () => findLiveItem(await pocketApi.getLiveList({ record: false, debug: true, next: 0 }), liveId) });
-    attempts.push({ label: 'replay', run: async () => findLiveItem(await pocketApi.getLiveList({ record: true, debug: true, next: 0 }), liveId) });
+    attempts.push({ label: 'live', run: async () => findLiveItem(await cachedLiveList(false, 0, 0), liveId) });
+    attempts.push({ label: 'replay', run: async () => findLiveItem(await cachedLiveList(true, 0, 0), liveId) });
     attempts.push({ label: 'replay', run: async () => findLiveItem(await pocketApi.getOpenLivePublicList({ record: true, next: 0 }), liveId) });
-    attempts.push({ label: 'replay', run: async () => {
-      for (let page = 1; page <= 3; page += 1) {
-        const found = findLiveItem(await pocketApi.getLiveList({ record: true, debug: true, page, next: page - 1 }), liveId);
-        if (found) return found;
-      }
-      return null;
-    } });
   }
   // 并行发起全部候选接口，按优先级取第一个出 URL 的结果；
   // 原来 6 个接口串行（最坏每个 15s 超时），是「解析卡死、第一次点击无响应」的根因。
-  const ATTEMPT_TIMEOUT = 8000;
+  const ATTEMPT_TIMEOUT = 4000;
   const settled = await Promise.allSettled(
     attempts.map((attempt) => Promise.race([
       attempt.run(),
@@ -688,8 +693,8 @@ async function resolveRoomLiveMediaWithRetry(media: RoomMedia): Promise<RoomMedi
   const started = Date.now();
   const first = await resolveRoomLiveMedia(media);
   if (first.url) return first;
-  if (Date.now() - started > 5000) return first;
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  if (Date.now() - started > 2500) return first;
+  await new Promise((resolve) => setTimeout(resolve, 400));
   return resolveRoomLiveMedia(media);
 }
 
@@ -2194,11 +2199,8 @@ export default function FollowedRoomsScreen() {
                   </View>
                 </>
               ) : (
-                <>
-                  <ActivityIndicator color="#ff6f91" size="large" />
-                  <Text style={styles.liveResolveTitle}>{t('正在解析直播地址…')}</Text>
-                  <Text style={styles.liveResolveText}>{t('首次打开需拉取最新直播流地址，请稍候；直播通常会持续几分钟')}</Text>
-                </>
+                /* 解析中：只转圈不给过程说明（用户反馈「没必要写明出来」；40s 列表缓存+4s 超时已大幅提速） */
+                <ActivityIndicator color="#ff6f91" size="large" />
               )}
             </View>
           </View>

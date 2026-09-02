@@ -41,6 +41,14 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       source={{
         uri: source.url,
         ...(source.headers ? { headers: source.headers } : {}),
+        // AWS/CDN 流播放中偶发缓冲耗尽卡顿：加大 Exo 缓冲池 + 30s 回看缓冲
+        bufferConfig: {
+          minBufferMs: 15000,
+          maxBufferMs: 60000,
+          bufferForPlaybackMs: 5000,
+          bufferForPlaybackAfterRebufferMs: 10000,
+          backBufferDurationMs: 30000,
+        },
       }}
       style={StyleSheet.absoluteFill}
       resizeMode="contain"

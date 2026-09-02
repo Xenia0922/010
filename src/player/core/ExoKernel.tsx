@@ -17,7 +17,11 @@ interface Props {
  * - paused 从 store 同步 → 控制条播放/暂停真实控原生。
  */
 export function ExoKernel({ source, onError }: Props) {
-  const paused = usePlayerStore((s) => s.state !== 'playing');
+  // ⚠️ 只在「用户显式暂停」(state==='paused') 时置原生暂停。
+  // 此前写成 state!=='playing'：loading（首帧前）阶段 paused=true → 原生 playWhenReady=false
+  // → 流根本不启动 → onSize 永不触发 → 永远 loading ——「大概率进不去、一进直播卡一帧」根因。
+  // 现在 loading 期间 paused=false，Exo 自动起播；出帧后 onSize→playing；暂停/继续由控制条显式驱动。
+  const paused = usePlayerStore((s) => s.state === 'paused');
   if (Platform.OS !== 'android' || !LiveExoView) {
     return null;
   }
