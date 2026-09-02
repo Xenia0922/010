@@ -45,22 +45,17 @@ export const useMemberStore = create<MemberState>((set) => ({
 interface UiState {
   tabBarHidden: boolean;
   toastMessage: string;
-  /** 当前路由名（容器级 onStateChange 写入；MiniPlayerBar 等 Navigator 外组件读，避免 useNavigationState 崩溃） */
-  currentRouteName: string;
   setTabBarHidden: (hidden: boolean) => void;
   showToast: (message: string) => void;
   hideToast: () => void;
-  setCurrentRouteName: (name: string) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
   tabBarHidden: false,
   toastMessage: '',
-  currentRouteName: '',
   setTabBarHidden: (hidden) => set({ tabBarHidden: hidden }),
   showToast: (message) => set({ toastMessage: message }),
   hideToast: () => set({ toastMessage: '' }),
-  setCurrentRouteName: (name) => set({ currentRouteName: name }),
 }));
 
 // --- v2.6: Announcement store ---

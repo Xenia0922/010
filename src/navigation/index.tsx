@@ -10,7 +10,6 @@ import { ensureMemberData } from '../services/memberData';
 import { RootStackParamList, TabParamList } from './types';
 import { AppTabBar, MCI } from '../components/AppTabBar';
 import { MiniPlayer } from '../components/MiniPlayer';
-import { MusicGlobalPlayer } from '../components/MusicGlobalPlayer';
 import { usePalette } from '../theme';
 import HomeScreen from '../screens/HomeScreen';
 import MessagesScreen from '../screens/MessagesScreen';
@@ -258,14 +257,7 @@ export default function AppNavigator() {
           <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: bgScrim }]} />
         </View>
       ) : null}
-      <NavigationContainer
-        theme={themed}
-        onStateChange={(state) => {
-          // 容器级路由监听：写 useUiStore.currentRouteName 供 Navigator 外组件（如音乐迷你条）读取，
-          // 避免在这些位置 useNavigationState 抛 "Couldn't get the navigation state"
-          useUiStore.getState().setCurrentRouteName(state?.routes?.[state.index]?.name ?? '');
-        }}
-      >
+      <NavigationContainer theme={themed}>
       <>
         <Stack.Navigator
           screenOptions={{
@@ -307,8 +299,6 @@ export default function AppNavigator() {
         <AppToast />
         {/* 应用内悬浮小窗播放器（全局挂载，导航上下文内可用） */}
         <MiniPlayer />
-        {/* 音乐迷你条 + 全屏播放器（B1 全局化：任何页面听歌都有控制条） */}
-        <MusicGlobalPlayer />
       </>
       </NavigationContainer>
     </>

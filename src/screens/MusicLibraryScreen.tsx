@@ -17,6 +17,8 @@ import { loadOfficialSiteMusic } from '../api/officialSiteMusic';
 import { loadR2Music } from '../api/r2Music';
 import { useSettingsStore, useUiStore } from '../store';
 import { useMusicPlayerStore } from '../store/musicPlayerStore';
+import MiniPlayerBar from '../components/MiniPlayerBar';
+import FullScreenPlayer from '../components/FullScreenPlayer';
 import { MusicEngine, mediaUrl as buildMediaUrl, isPlayableHost } from '../services/musicPlayer';
 import { errorMessage } from '../utils/data';
 import { logError } from '../utils/runtimeLog';
@@ -197,6 +199,7 @@ export default function MusicLibraryScreen() {
   // mediaReady 门控：媒体未就绪时 seek 无效（ExoPlayer 未 prepare），
   // 续播位置在 onLoad 时消费，拖动进度条在就绪后消费。
   const [mediaReady, setMediaReady] = useState(false);
+  const [showFullScreen, setShowFullScreen] = useState(false);
   useEffect(() => {
     if (seekTarget > 0 && mediaReady && videoRef.current && typeof videoRef.current.seek === 'function') {
       try {
@@ -213,19 +216,19 @@ export default function MusicLibraryScreen() {
     const cur = st.queue[st.currentIndex];
     const sameAsCurrent = !!cur && (cur.musicId || cur.id) === (item.musicId || item.id);
     if (sameAsCurrent && st.playbackState === 'playing') {
-      useMusicPlayerStore.getState().setFullscreenVisible(true);
+      setShowFullScreen(true);
       return;
     }
     // 同一首（记忆恢复/暂停中）：走 resume 保留进度续播，而不是 playTrack 从 0 开始
     if (sameAsCurrent && st.position > 0) {
       MusicEngine.resume();
-      useMusicPlayerStore.getState().setFullscreenVisible(true);
+      setShowFullScreen(true);
       return;
     }
     // 克隆队列：播放器 store 与列表 songs 解耦，避免共享同一批对象引用时，
     // 任何播放态写入（或 FlatList 复用）反噬列表渲染。
     MusicEngine.playTrack(item, filteredSongs.map((t) => ({ ...t })));
-    useMusicPlayerStore.getState().setFullscreenVisible(true);
+    setShowFullScreen(true);
   };
 
   return (
@@ -475,6 +478,8 @@ export default function MusicLibraryScreen() {
           }
         }}
       />
+      <MiniPlayerBar onOpenFullScreen={() => setShowFullScreen(true)} />
+      <FullScreenPlayer visible={showFullScreen} onClose={() => setShowFullScreen(false)} />
     </View>
   );
 }

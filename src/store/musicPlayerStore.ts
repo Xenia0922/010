@@ -83,8 +83,6 @@ interface MusicPlayerState {
   error: string | null;
   // Favorites (persisted)
   favorites: string[];
-  /** 全屏播放器显隐（B1 全局化：迷你条/全屏挂 navigation 层，此状态全局可见） */
-  fullscreenVisible: boolean;
   /**
    * Seek 指令：组件写，Video onLoad / effect 检测后执行 seek 并清零。
    * 不持久化（持久化 seek 位置通过 position 字段实现）。
@@ -108,7 +106,6 @@ interface MusicPlayerState {
   setSeekTarget: (t: number) => void;
   isFavorite: (id: string) => boolean;
   toggleFavorite: (id: string) => void;
-  setFullscreenVisible: (v: boolean) => void;
   next: () => Track | null;
   prev: () => Track | null;
 }
@@ -133,7 +130,6 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       lyrics: [],
       error: null,
       favorites: [],
-      fullscreenVisible: false,
       seekTarget: 0,
 
       setQueue: (tracks) => set({ queue: tracks, currentIndex: tracks.length > 0 ? 0 : -1 }),
@@ -196,7 +192,6 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       setError: (error) => set({ error, playbackState: error ? 'error' : 'idle' }),
 
       setSeekTarget: (seekTarget) => set({ seekTarget }),
-      setFullscreenVisible: (fullscreenVisible) => set({ fullscreenVisible }),
 
       /**
        * B7 收藏键归一：收藏统一存 `title|artist` 键（旧数据仍为 musicId，双兼容）——
