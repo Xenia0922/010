@@ -66,6 +66,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const progW = useRef(0);
   const progX = useRef(0);
   const dragRatioRef = useRef<number | null>(null);
+  // 拖动中本地预览比例（UI 显示用）；松手才写 store/seek 一次——避免每帧 setPosition
+  // 高频触发全局订阅组件渲染风暴（实测拖动导致 ANR/闪退、日志来不及落盘）
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
   const progPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -99,6 +102,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const playing = state === 'playing';
   const isLive = source.kind === 'live';
   const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;
+  // 拖动中显示本地预览比例与目标时间（跟手），不依赖高频 store 写入
+  const shownRatio = dragRatio != null ? dragRatio : progRatio;
+  const shownPos = dragRatio != null && duration > 0 ? dragRatio * duration : position;
 
   const togglePlay = () => {
     const s = usePlayerStore.getState();
@@ -142,22 +148,22 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     const r = ratioFromX(pageX);
     if (r == null) return;
     dragRatioRef.current = r;
-    usePlayerStore.getState().setPosition(r * dur); // 拖动即跟手预览
+    setDragRatio(r); // 本地预览（不写 store）
   };
   const onProgMove = (pageX: number) => {
     if (dragRatioRef.current == null) return;
     const r = ratioFromX(pageX);
     if (r == null) return;
     dragRatioRef.current = r;
-    const dur = usePlayerStore.getState().duration;
-    if (dur > 0) usePlayerStore.getState().setPosition(r * dur);
+    setDragRatio(r); // 本地预览
   };
   const onProgUp = () => {
     const r = dragRatioRef.current;
     dragRatioRef.current = null;
+    setDragRatio(null);
     if (r != null) {
       const dur = usePlayerStore.getState().duration;
-      if (dur > 0) seekTo(r * dur);
+      if (dur > 0) seekTo(r * dur); // 松手一次写入
     }
   };
 
@@ -224,7 +230,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         <Animated.View style={[styles.dockWrap, { opacity: controlsOpacity }]} pointerEvents="box-none">
           {/* 进度行：当前时间 —— 可拖进度 —— 总时间（直播仅显示 直播） */}
           <View style={styles.progressRow}>
-            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(position)}</Text> : null}
+            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(shownPos)}</Text> : null}
             <View
               ref={progTrackRef}
               style={styles.progressTouch}
@@ -235,9 +241,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
               {...progPan.panHandlers}
             >
               <View style={styles.progressTrackBg}>
-                <View style={[styles.progressFill, { width: `${progRatio * 100}%` }]} />
+                <View style={[styles.progressFill, { width: `${shownRatio * 100}%` }]} />
               </View>
-              <View style={[styles.progressThumb, { left: `${progRatio * 100}%` }]} />
+              <View style={[styles.progressThumb, { left: `${shownRatio * 100}%` }]} />
             </View>
             {!isLive ? <Text style={styles.timeText}>{formatPlayTime(duration)}</Text> : <Text style={styles.timeText}>{t('直播')}</Text>}
           </View>
