@@ -1,6 +1,7 @@
 import React, { ReactNode, useEffect, useRef } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 import { usePlayerStore } from './store/playerStore';
+import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import { PlayerCore } from './core/PlayerCore';
 import { PlayerChrome } from './chrome/PlayerChrome';
 import { FullscreenManager } from './chrome/FullscreenManager';
@@ -62,6 +63,9 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
   useEffect(() => {
     if (openedFor.current === sourceUrl) return;
     openedFor.current = sourceUrl;
+    // 开大播放器前收起悬浮小窗（独立 store 无互斥 → 否则双路声音）
+    const mp = useMiniPlayerStore.getState();
+    if (mp && mp.visible) mp.close();
     usePlayerStore.getState().open(source, meta, danmaku);
     return () => {
       // 非 persistent：卸载时若仍是当前源则关闭播放器
