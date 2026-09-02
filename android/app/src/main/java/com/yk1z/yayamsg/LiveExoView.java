@@ -115,7 +115,10 @@ public class LiveExoView extends FrameLayout {
   public void stop() {
     released = true;
     handler.removeCallbacksAndMessages(null);
-    releasePlayer();
+    // 延迟 ~150ms 释放：让解码/渲染线程把当前帧周期走完再销毁播放器。
+    // 模拟器（MuMu）上若在上一次播放正渲染时同步 release，MediaCodec 易被顶死，
+    // 表现为「第二次进直播只出第一帧就定住」（首次正常、后续全部卡首帧）。
+    handler.postDelayed(this::releasePlayer, 150);
   }
 
   private void start() {
@@ -222,8 +225,19 @@ public class LiveExoView extends FrameLayout {
   private void releasePlayer() {
     try {
       if (player != null) {
-        player.clearVideoTextureView(textureView);
-        player.release();
+        try {
+          player.setPlayWhenReady(false);
+          player.stop();
+        } catch (Throwable ignored) {
+        }
+        try {
+          player.clearVideoTextureView(textureView);
+        } catch (Throwable ignored) {
+        }
+        try {
+          player.release();
+        } catch (Throwable ignored) {
+        }
       }
     } catch (Throwable ignored) {
     } finally {
