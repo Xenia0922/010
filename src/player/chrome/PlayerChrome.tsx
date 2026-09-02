@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { usePlayerStore } from '../store/playerStore';
 import { PlayerFeatures } from '../types';
@@ -43,9 +43,24 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const source = usePlayerStore((s) => s.source);
   const useWebKernel = usePlayerStore((s) => s.useWebKernel);
   const danmakuOn = usePlayerStore((s) => s.danmakuOn);
+  const rate = usePlayerStore((s) => s.rate);
   const [moreVisible, setMoreVisible] = useState(false);
-  const [rate, setRate] = useState(1);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 进度条拖动：比例 → seek（进度条此前为纯展示不可拖——录播无法拖动定位）
+  const progTrackRef = useRef<View>(null);
+  const progW = useRef(0);
+  const progX = useRef(0);
+  const dragRatioRef = useRef<number | null>(null);
+  const progPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e: GestureResponderEvent) => onProgDown(e.nativeEvent.pageX),
+      onPanResponderMove: (e: GestureResponderEvent) => onProgMove(e.nativeEvent.pageX),
+      onPanResponderRelease: () => onProgUp(),
+      onPanResponderTerminate: () => onProgUp(),
+    }),
+  ).current;
 
   const showControls = useCallback(() => {
     usePlayerStore.getState().toggleControls(true);
@@ -82,10 +97,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   };
 
   const cycleRate = () => {
-    setRate((r) => {
-      const next = r === 1 ? 1.5 : r === 1.5 ? 2 : 1;
-      return next;
-    });
+    const cur = usePlayerStore.getState().rate;
+    const next = cur === 1 ? 1.5 : cur === 1.5 ? 2 : 1;
+    usePlayerStore.getState().setRate(next);
     showControls();
   };
 
@@ -93,9 +107,38 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     if (isLive) return;
     const s = usePlayerStore.getState();
     s.setPosition(t);
-    // seek 指令交给 PlayerCore（NativeKernel 消费后清零）
+    // seek 指令交给 PlayerCore（内核消费后清零）
     s.setSeekTarget(t);
     showControls();
+  };
+
+  const ratioFromX = (pageX: number): number | null => {
+    if (!progW.current || progW.current < 2) return null;
+    return Math.max(0, Math.min(1, (pageX - progX.current) / progW.current));
+  };
+  const onProgDown = (pageX: number) => {
+    const dur = usePlayerStore.getState().duration;
+    if (usePlayerStore.getState().source?.kind === 'live' || dur <= 0) return;
+    const r = ratioFromX(pageX);
+    if (r == null) return;
+    dragRatioRef.current = r;
+    usePlayerStore.getState().setPosition(r * dur); // 拖动即跟手预览
+  };
+  const onProgMove = (pageX: number) => {
+    if (dragRatioRef.current == null) return;
+    const r = ratioFromX(pageX);
+    if (r == null) return;
+    dragRatioRef.current = r;
+    const dur = usePlayerStore.getState().duration;
+    if (dur > 0) usePlayerStore.getState().setPosition(r * dur);
+  };
+  const onProgUp = () => {
+    const r = dragRatioRef.current;
+    dragRatioRef.current = null;
+    if (r != null) {
+      const dur = usePlayerStore.getState().duration;
+      if (dur > 0) seekTo(r * dur);
+    }
   };
 
   const toggleDanmaku = () => {
@@ -149,7 +192,15 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
             <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={22} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.timeText}>{formatPlayTime(position)}</Text>
-          <View style={styles.progressTrack}>
+          <View
+            ref={progTrackRef}
+            style={styles.progressTrack}
+            onLayout={(e) => {
+              progW.current = e.nativeEvent.layout.width;
+              progTrackRef.current?.measureInWindow?.((x) => { progX.current = x; });
+            }}
+            {...progPan.panHandlers}
+          >
             <View style={[styles.progressFill, { width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }]} />
           </View>
           <Text style={styles.timeText}>{isLive ? t('直播') : formatPlayTime(duration)}</Text>

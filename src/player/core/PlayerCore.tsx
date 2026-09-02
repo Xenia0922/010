@@ -27,6 +27,7 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const setActiveKernel = usePlayerStore((s) => s.setActiveKernel);
   const setUseWebKernel = usePlayerStore((s) => s.setUseWebKernel);
   const seekTarget = usePlayerStore((s) => s.seekTarget);
+  const rate = usePlayerStore((s) => s.rate);
 
   // seek 指令消费：UI 拖动进度条 → NativeKernel.seek → 清零
   useEffect(() => {
@@ -108,7 +109,7 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
       ref={nativeRef}
       source={source}
       paused={paused}
-      rate={1}
+      rate={rate}
       volume={source.volume}
       resumeAt={externalResumeAt && externalResumeAt > 1 ? externalResumeAt : position > 1 ? position : 0}
       onLoad={handleLoad}

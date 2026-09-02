@@ -19,6 +19,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSettingsStore } from '../store';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import PlayerScreen from '../player';
+import { usePlayerStore } from '../player/store/playerStore';
 import { FadeInView, ScalePressable } from '../components/Motion';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
@@ -92,6 +93,7 @@ export default function BilibiliLiveScreen() {
   const [moreVisible, setMoreVisible] = useState(false);
   // B站直播弹幕：WebSocket 实时接收 → DanmakuOverlay（live 模式立即上屏）
   const [showDanmaku, setShowDanmaku] = useState(false);
+  const playerDanmakuOn = usePlayerStore((s) => s.danmakuOn);
   const [dmItems, setDmItems] = useState<DanmakuItem[]>([]);
   const [dmTick, setDmTick] = useState(0);
   const danmakuRef = useRef<BilibiliDanmaku | null>(null);
@@ -454,7 +456,7 @@ export default function BilibiliLiveScreen() {
           <DanmakuOverlay
             danmaku={dmItems}
             currentTime={dmTick}
-            visible={showDanmaku && !!streamUrl}
+            visible={playerDanmakuOn && showDanmaku && !!streamUrl}
             live
           />
         </PlayerScreen>

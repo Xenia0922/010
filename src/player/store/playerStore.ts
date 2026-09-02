@@ -29,6 +29,8 @@ interface PlayerState {
   activeKernel: 'native' | 'exo' | 'web';
   // 画质（B站）
   qualityQn: number | null;
+  /** 播放倍速（回放可用；live 恒 1） */
+  rate: number;
   /** seek 指令：UI 写入，PlayerCore 消费后清零（与音乐 store seekTarget 同模式） */
   seekTarget: number;
   /** 弹幕开关 */
@@ -47,6 +49,7 @@ interface PlayerState {
   setUseWebKernel: (v: boolean) => void;
   setActiveKernel: (k: PlayerState['activeKernel']) => void;
   setQualityQn: (qn: number | null) => void;
+  setRate: (r: number) => void;
   setSeekTarget: (t: number) => void;
   toggleDanmaku: () => void;
   /** 播放失败时切到下一候选线路；返回是否切换成功（无候选/已到末尾 → false） */
@@ -73,6 +76,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   useWebKernel: false,
   activeKernel: 'native',
   qualityQn: null,
+  rate: 1,
   seekTarget: 0,
   danmakuOn: true,
 
@@ -92,6 +96,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         useWebKernel: false,
         activeKernel: source.needsNativeExo ? 'exo' : 'native',
         qualityQn: null,
+        rate: 1,
         seekTarget: 0,
         danmakuOn: true,
         candidateUrls: urls,
@@ -122,6 +127,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setUseWebKernel: (useWebKernel) => set({ useWebKernel }),
   setActiveKernel: (activeKernel) => set({ activeKernel }),
   setQualityQn: (qualityQn) => set({ qualityQn }),
+  setRate: (rate) => set({ rate }),
   setSeekTarget: (seekTarget) => set({ seekTarget }),
   toggleDanmaku: () => set((s) => ({ danmakuOn: !s.danmakuOn })),
   nextCandidate: () => {

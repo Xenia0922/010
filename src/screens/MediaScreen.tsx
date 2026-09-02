@@ -712,6 +712,7 @@ export default function MediaScreen() {
   const [playbackTime, setPlaybackTime] = useState(0);
   // R1: 弹幕时钟 = 统一播放器上报的真实进度（live 也在播中持续推进，对齐 poll 弹幕时间轴）
   const danmakuClock = usePlayerStore((s) => s.position);
+  const playerDanmakuOn = usePlayerStore((s) => s.danmakuOn);
   // 播放器控制（哔哩哔哩风格自定义控制条）
   const videoRef = useRef<any>(null);
   const [duration, setDuration] = useState(0);
@@ -1563,7 +1564,7 @@ export default function MediaScreen() {
             <DanmakuOverlay
               danmaku={danmaku}
               currentTime={danmakuClock}
-              visible={showDanmaku && !!playing}
+              visible={playerDanmakuOn && showDanmaku && !!playing}
               live={!!playing?.isLive}
             />
           </PlayerScreen>
