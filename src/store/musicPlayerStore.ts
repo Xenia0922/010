@@ -220,11 +220,15 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
        */
       isFavorite: (id) => {
         const f = get().favorites;
-        if (f.includes(id)) return true;
+        if (f.includes(id)) return true; // 旧 musicId 键兼容
         const t = get().queue.find((x) => String(x.musicId || x.id) === String(id));
         if (t) {
-          const k = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
-          if (k && k !== '|' && f.includes(k)) return true;
+          // 键 = title|artist|album（album 区分同名不同版本/不同公演——修复「收藏一首导致同名一起收藏」）；
+          // 兼容 B7 早期 title|artist 键数据
+          const k3 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`.trim();
+          const k2 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
+          if (k3 !== '||' && f.includes(k3)) return true;
+          if (k2 !== '|' && f.includes(k2)) return true;
         }
         return false;
       },
@@ -232,15 +236,20 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       toggleFavorite: (id) => set((s) => {
         if (!id) return s;
         const t = s.queue.find((x) => String(x.musicId || x.id) === String(id));
-        const k = t ? `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim() : '';
-        const key = k && k !== '|' ? k : id;
-        if (s.favorites.includes(id)) {
-          return { favorites: s.favorites.filter((f) => f !== id) };
+        let keys: string[] = [];
+        if (t) {
+          const k3 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`.trim();
+          const k2 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`.trim();
+          keys = [...(k3 !== '||' ? [k3] : []), ...(k2 !== '|' ? [k2] : [])];
         }
-        if (s.favorites.includes(key)) {
-          return { favorites: s.favorites.filter((f) => f !== key) };
+        if (!keys.length) keys = [id];
+        // 任一键已收藏 → 全部移除（含旧数据清理）；否则写入精确键 k3
+        const hit = keys.find((k) => s.favorites.includes(k)) ?? (s.favorites.includes(id) ? id : null);
+        if (hit !== null && hit !== undefined) {
+          const removeSet = new Set([hit, ...keys]);
+          return { favorites: s.favorites.filter((f) => !removeSet.has(f)) };
         }
-        return { favorites: [...s.favorites, key] };
+        return { favorites: [...s.favorites, keys[0]] };
       }),
 
       next: () => {
