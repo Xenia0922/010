@@ -11,6 +11,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 function createThrottleStorage(storage: { getItem: (name: string) => Promise<string | null>; setItem: (name: string, value: string) => Promise<void>; removeItem: (name: string) => Promise<void> }, ms = 30000) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const pending = new Map<string, string>();
+  const flushAll = () => {
+    timers.forEach((timer, name) => { clearTimeout(timer); });
+    timers.clear();
+    pending.forEach((v, name) => {
+      pending.delete(name);
+      storage.setItem(name, v).catch(() => {});
+    });
+  };
   return {
     getItem: (name: string) => storage.getItem(name),
     setItem: (name: string, value: string) => {
@@ -33,8 +41,15 @@ function createThrottleStorage(storage: { getItem: (name: string) => Promise<str
       }
       return storage.removeItem(name);
     },
+    // A: 切后台/杀进程前强制落盘（否则 30s 节流窗口内的切歌/进度丢失 →「记忆记不住」）
+    flushAll,
   };
 }
+// A: 供 App 层在切后台时调用（throttle 拦截了 zustand persist.flush，需直通底层）
+export function flushMusicPlayerStorage() {
+  throttleFlushRef?.();
+}
+let throttleFlushRef: (() => void) | null = null;
 
 export type PlayMode = 'sequential' | 'random' | 'single';
 export type PlaybackState = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
@@ -246,7 +261,11 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
     }),
     {
       name: 'yaya_music_player_v2',
-      storage: createJSONStorage(() => createThrottleStorage(AsyncStorage)),
+      storage: createJSONStorage(() => {
+        const store = createThrottleStorage(AsyncStorage);
+        throttleFlushRef = store.flushAll;
+        return store;
+      }),
       partialize: (s) => ({
         queue: s.queue,
         currentIndex: s.currentIndex,

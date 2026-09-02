@@ -62,7 +62,8 @@ export default function ProfileScreen() {
     setArchive({ data: null, history: [], error: '' });
     setLoading(true);
     try {
-      const memberId = parseInt(member.id, 10);
+      const memberId = parseInt(String(member.id || ''), 10);
+      if (!Number.isFinite(memberId)) { setLoading(false); return; }
       const [archiveRes, historyRes] = await Promise.all([
         pocketApi.getStarArchives(memberId).catch((e: any) => ({ __error: e?.message || String(e) })),
         pocketApi.getStarHistory(memberId).catch(() => null),
@@ -155,7 +156,7 @@ export default function ProfileScreen() {
             <InfoItem label={t('大房间')} value={firstText(selectedMember.channelId)} />
             <InfoItem label={t('服务器')} value={firstText(selectedMember.serverId)} />
             {selectedMember.yklzId ? <InfoItem label={t('小房间')} value={firstText(selectedMember.yklzId)} /> : null}
-            {selectedMember.roomId ? <InfoItem label="roomId" value={firstText(selectedMember.roomId)} /> : null}
+            {selectedMember.roomId ? <InfoItem label={t('房间ID')} value={firstText(selectedMember.roomId)} /> : null}
             {selectedMember.liveRoomId ? <InfoItem label={t('直播间')} value={firstText(selectedMember.liveRoomId)} /> : null}
             {raw.wbName ? <InfoItem label={t('微博')} value={firstText(raw.wbName)} /> : null}
             {raw.wbUid ? <InfoItem label={t('微博UID')} value={firstText(raw.wbUid)} /> : null}

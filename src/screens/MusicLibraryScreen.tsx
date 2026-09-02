@@ -84,6 +84,8 @@ const GROUP_LABELS: Record<string, string> = {
   '7SENSES': '7SENSES',
   FAV: '收藏',
 };
+// C: 模块级会话缓存——导航进出音乐库（重挂载）直接显示上次列表，不再重复拉取/闪骨架
+let songsCache: any[] | null = null;
 const CHIP_MIN_WIDTH = 64;
 const CHIP_GAP = 8;
 const CHIP_FAV_MIN_WIDTH = 92;
@@ -102,7 +104,8 @@ export default function MusicLibraryScreen() {
   const favorites = useMusicPlayerStore((s) => s.favorites);
   const toggleFavorite = useMusicPlayerStore((s) => s.toggleFavorite);
   const seekTarget = useMusicPlayerStore((s) => s.seekTarget);
-  const [songs, setSongs] = useState<any[]>([]);
+  const [songs, setSongs] = useState<any[]>(songsCache ?? []);
+  const applySongs = (list: any[]) => { songsCache = list; setSongs(list); };
   // 搜索词 / 分团：纯 local state（不再镜像到 store，避免双写）。
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('ALL');
@@ -166,7 +169,7 @@ export default function MusicLibraryScreen() {
   const loadAll = async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    setLoading(true);
+    if (!songs.length) setLoading(true);
     setStatus('');
     try {
       const [officialRes, r2Res] = await Promise.allSettled([
@@ -194,14 +197,30 @@ export default function MusicLibraryScreen() {
         seen.add(key);
         merged.push(t);
       });
-      // 排序：先按团（groupLabel）再按标题，官方/R2 同团混排——避免 R2 1559 首全部堆在列表尾部
+      // 排序（对齐桌面 sortKey='source' 语义 + 用户要求：SNH48 系子团归 SNH48 段）：
+      // 段序 SNH48 系(含 7SENSES/BLUEV/DEMOON/HO2/Color Girls/塞纳河组合) → GNZ → ... ；
+      // 同段内按 sourceIndex（官方源小在前，R2 公演源大在后），R2 内再按子团聚合后按标题
+      const SNH_FAMILY = new Set(['SNH48', '7SENSES', 'BLUEV', 'DEMOON', 'HO2', 'COLOR GIRLS', 'Color Girls', '塞纳河组合']);
+      const groupOrder = (g: string): number => {
+        const raw = String(g || '').trim();
+        const up = raw.toUpperCase();
+        if (SNH_FAMILY.has(raw) || up === 'COLOR GIRLS') return 0;
+        const map: Record<string, number> = { GNZ48: 10, BEJ48: 20, AKB48: 30, CKG48: 40, CGT48: 50, SHY48: 60, TSH48: 70, TPE48: 80 };
+        return map[up] ?? 90;
+      };
       merged.sort((a: any, b: any) => {
+        const oa = groupOrder(a.groupLabel);
+        const ob = groupOrder(b.groupLabel);
+        if (oa !== ob) return oa - ob;
+        const sa = Number(a.sourceIndex) || 0;
+        const sb = Number(b.sourceIndex) || 0;
+        if (sa !== sb) return sa - sb;
         const ga = String(a.groupLabel || '').trim().toLowerCase();
         const gb = String(b.groupLabel || '').trim().toLowerCase();
         if (ga !== gb) return ga < gb ? -1 : 1;
         return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
       });
-      setSongs(merged);
+      applySongs(merged);
       setHasMore(false);
       // 静默提示各源状态（不打扰）：仅当 R2 失败时提示「官方源可用」，双失败已在上面抛错
       if (r2Res.status === 'rejected' && officialRes.status === 'fulfilled') {

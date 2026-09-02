@@ -208,7 +208,7 @@ export default function FetchScreen() {
                     {item.senderName || item.senderNickName || item.extInfo?.user?.nickName || t('成员')}
                   </Text>
                   <Text style={[styles.msgTime, { color: palette.labelTertiary }]}>
-                    {formatTimestamp(item.msgTime || item.time || item.ctime).slice(5, 16)}
+                    {String(formatTimestamp(item.msgTime || item.time || item.ctime)).slice(5, 16)}
                   </Text>
                 </View>
                 <Text style={[styles.msgText, { color: palette.labelSecondary }]} numberOfLines={4}>

@@ -29,6 +29,7 @@ export default function RechargeScreen() {
   const [loading, setLoading] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
+  // React 18+ 卸载后 setState 为 no-op（无告警），请求继续执行无害；保留简单调用
   useEffect(() => { refreshBalance(); }, []);
 
   const refreshBalance = async () => {

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, ImageBackground, Modal, Image, TouchableOpacity, Linking, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, ActivityIndicator, ImageBackground, Modal, Image, TouchableOpacity, Linking, StyleSheet, Animated, Easing, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AppNavigator from './src/navigation';
 import { loadSettings } from './src/services/settings';
@@ -12,7 +12,7 @@ import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
 import { startRadioForeground, stopRadioForeground, onRadioStopRequested, onRadioControlRequested } from './src/native/LivePlayer';
 import { ensureNotificationPermission } from './src/utils/notifications';
-import { useMusicPlayerStore } from './src/store/musicPlayerStore';
+import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
 import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
@@ -65,6 +65,13 @@ initRuntimeLog().catch(() => {});
  * 电台（RoomRadioScreen）自带前台服务，两路共用同一 Service，不会同时播放冲突。
  */
 function MusicForegroundBridge() {
+  // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active') flushMusicPlayerStorage();
+    });
+    return () => sub.remove();
+  }, []);
   const playbackState = useMusicPlayerStore((s) => s.playbackState);
   const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
   const position = useMusicPlayerStore((s) => s.position);

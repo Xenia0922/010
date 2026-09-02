@@ -167,6 +167,7 @@ function SectionHeader({ title, action_label, onAction }: { title: string; actio
 
 /** 首页全宽沉浸直播 banner（16:9）：渐变 + 白字上浮 + 直播中红标 */
 function LiveBanner({ item, onPress }: { item: LiveCardItem; onPress: () => void }) {
+  const { t } = useI18n();
   const palette = usePalette();
   const [broken, setBroken] = useState(false);
   const retriedRef = useRef(false);
@@ -203,7 +204,7 @@ function LiveBanner({ item, onPress }: { item: LiveCardItem; onPress: () => void
           style={styles.liveBannerShade}
         />
         <View style={[styles.liveBadge, styles.liveBannerBadge]}>
-          <Text style={styles.liveBadgeText}>直播中</Text>
+          <Text style={styles.liveBadgeText}>{t('直播中')}</Text>
         </View>
         <View style={styles.liveBannerInfo}>
           <Text style={styles.liveBannerTitle} numberOfLines={2}>{item.title}</Text>
@@ -232,6 +233,8 @@ export default function HomeScreen() {
   const [livesError, setLivesError] = useState('');
   const [bannerIndex, setBannerIndex] = useState(0);
   const fetchedRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const livesRetryRef = useRef(0);
 
   // 公演直播：B站直播间开播检测（仅五个团 SNH48/GNZ48/BEJ48/CGT48/CKG48，其余直播间不展示）
@@ -293,6 +296,7 @@ export default function HomeScreen() {
       if (gongyanRetryRef.current < 2) {
         gongyanRetryRef.current += 1;
         setTimeout(() => {
+          if (!mountedRef.current) return;
           if (AppState.currentState === 'active') fetchGongyanStatus();
         }, 5000);
       }
@@ -396,6 +400,7 @@ export default function HomeScreen() {
           if (livesRetryRef.current < 3) {
             livesRetryRef.current += 1;
             setTimeout(() => {
+              if (!mountedRef.current) return;
               if (AppState.currentState === 'active') fetchLives();
             }, 5000);
           }
@@ -498,7 +503,7 @@ export default function HomeScreen() {
 
   const banner = lives[bannerIndex];
   const trackTitle = currentTrack?.title || '';
-  const trackArtist = currentTrack?.joinMemberNames || currentTrack?.artist || '';
+  const trackArtist = currentTrack?.artist || currentTrack?.joinMemberNames || '';
   // F3 修复：续播卡随播放状态显示「播放中/加载中/继续播放」，R2 曲目 URL 异步解析时用户有反馈
   const resumeLabel = musicPlaybackState === 'playing'
     ? t('播放中')
