@@ -1553,6 +1553,7 @@ export default function MediaScreen() {
               { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: () => openRankPanel() },
               ...((announceVisible && announcement) ? [{ key: 'announce', icon: 'bullhorn', label: t('公告'), active: announceExpanded, onPress: () => setAnnounceExpanded((v) => !v) }] : []),
               { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
+              { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleMiniPlayer },
             ]}
             onClose={() => { setPipPlaying(false); setPlaying(null); }}
             // 直播流地址有时效（wsSecret）：失败重试 = 重新解析（startPlay），而非重播同 URL

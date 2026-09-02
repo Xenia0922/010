@@ -79,7 +79,8 @@ function programDurationSec(item: any): number {
     item.duration || item.audioDuration || item.audioTime || item.length
     || item.playTime || item.time,
   );
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  // Y19: playTime/time 等兜底字段可能是时间戳/播放量 → 仅接受 24h 内合理音频时长
+  return Number.isFinite(n) && n > 0 && n < 86400 ? n : 0;
 }
 
 export default function AudioProgramsScreen() {
@@ -151,7 +152,7 @@ export default function AudioProgramsScreen() {
     }
   };
 
-  const active = playing?.talkId;
+  const active = playing ? (playing.talkId ?? playing.id) : undefined;
 
   return (
     <View style={styles.container}>
@@ -251,7 +252,7 @@ export default function AudioProgramsScreen() {
                   <View style={styles.infoWrap}>
                     <Text style={[styles.progTitle, { color: palette.label }]} numberOfLines={1}>{item.title || t('无标题')}</Text>
                     <Text style={[styles.progDesc, { color: palette.labelSecondary }]} numberOfLines={1}>
-                      {[item.subTitle, item.guest].filter(Boolean).join(' · ') || programDate(item)}
+                      {[item.artist, item.album, item.guest].filter(Boolean).join(' · ') || programDate(item)}
                     </Text>
                   </View>
                   <View style={styles.rowTrailing}>

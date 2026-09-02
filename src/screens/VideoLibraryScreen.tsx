@@ -57,7 +57,8 @@ function videoDuration(item: any): string {
     item.duration || item.videoDuration || item.videoTime || item.videoLength
     || item.playTime || item.mediaDuration || item.length,
   );
-  return Number.isFinite(n) && n > 0 ? formatDuration(n) : '';
+  // Y19: playTime 可能是时间戳/播放量 → 仅接受 24h 内合理时长
+  return Number.isFinite(n) && n > 0 && n < 86400 ? formatDuration(n) : '';
 }
 
 function videoMeta(item: any): string {
@@ -79,13 +80,14 @@ export default function VideoLibraryScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [nextCtime, setNextCtime] = useState(0);
+  const nextCtimeRef = useRef(0);
   const [loadError, setLoadError] = useState('');
   const loadingRef = useRef(false);
 
   const load = async (refresh = true) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    const cursor = refresh ? 0 : nextCtime;
+    const cursor = refresh ? 0 : nextCtimeRef.current;
     if (refresh) setLoading(true);
     else setLoadingMore(true);
     setStatus(refresh ? '' : '');
@@ -94,7 +96,9 @@ export default function VideoLibraryScreen() {
       const res = await officialMediaApi.getVideoList({ ctime: cursor, typeId: 0, groupId: 0, limit: 20 });
       const list = normalizeVideos(res);
       setVideos((prev) => (refresh ? mergeUniqueVideos([], list) : mergeUniqueVideos(prev, list)));
-      setNextCtime(nextCtimeFrom(list));
+      const nc = nextCtimeFrom(list);
+      nextCtimeRef.current = nc;
+      setNextCtime(nc);
       setHasMore(list.length >= 20 && nextCtimeFrom(list) > 0);
       const loadedCount = refresh ? list.length : mergeUniqueVideos(videos, list).length;
       setStatus(loadedCount ? t('已加载 {count} 条视频', { count: loadedCount }) : t('官方接口暂无视频资源'));

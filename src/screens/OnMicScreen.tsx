@@ -50,13 +50,16 @@ export default function OnMicScreen() {
     if (inputs.length) useOnMicStore.getState().scan(inputs, opts);
   }, [buildInputs]);
 
+  // 进入页面强制扫描一次全部成员（force 绕过 60s 节流）
   useEffect(() => {
-    setError('');
-    if (!members.length) setError(t('暂无成员数据，请先刷新成员库'));
-    // 进入页面强制扫描一次全部成员（force 绕过 60s 节流）
     scan({ force: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Y17: members 异步加载完成后重算错误态（此前仅挂载算一次 → 长期误显示「暂无成员数据」）
+  useEffect(() => {
+    setError('');
+    if (!members.length) setError(t('暂无成员数据，请先刷新成员库'));
+  }, [members, t]);
 
   // tab 可见时每 60s 静默刷新（store 内部节流 60s + 预算制增量：每轮 1/3 成员，约 3 轮全覆盖）
   useFocusEffect(

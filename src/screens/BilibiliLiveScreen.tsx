@@ -500,8 +500,8 @@ export default function BilibiliLiveScreen() {
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
-            refreshing={false}
-            onRefresh={checkStatuses}
+            refreshing={loading}
+            onRefresh={() => checkStatuses(false)}
             tintColor={palette.tint}
             colors={[palette.tint]}
             progressBackgroundColor={palette.surface}
