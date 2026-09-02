@@ -327,7 +327,7 @@ function FullScreenPlayerInner({
                       <View style={styles.queueInfo}>
                         <Text style={[typography.subhead, { color: palette.label, fontWeight: '700' }]} numberOfLines={1}>{item.title || t('未知')}</Text>
                         <Text style={[typography.caption1, { color: palette.labelTertiary, marginTop: 2 }]} numberOfLines={1}>
-                          {joinMeta([item.albumName || item.album, item.joinMemberNames || item.artist]) || t('官方音乐')}
+                          {joinMeta([item.groupLabel, item.artist, item.album]) || t('官方音乐')}
                         </Text>
                       </View>
                       {active ? <Icon name="volume-high" size={18} color={palette.tint} /> : null}
