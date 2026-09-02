@@ -203,12 +203,20 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 
   return (
     <>
-      {/* 顶栏（内嵌模式不显示）：顶部渐变遮罩保证白字可读 */}
-      {!inline ? (
+      {/* 顶栏：常规/卡片全屏均显示（卡片全屏必须有返回钮，否则无法退出） */}
+      {!inline || fullscreen ? (
         <Animated.View style={[styles.topWrap, { opacity: controlsOpacity }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
           <LinearGradient colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={StyleSheet.absoluteFill} />
-          <TouchableOpacity style={styles.topBtn} onPress={() => { if (onClose) onClose(); else usePlayerStore.getState().close(); }}>
-            <MaterialCommunityIcons name="chevron-down" size={24} color="#fff" />
+          <TouchableOpacity
+            style={styles.topBtn}
+            onPress={() => {
+              // 卡片全屏：返回 = 退出全屏回卡片；页面播放器：返回 = 关闭（onClose）
+              if (inline && fullscreen) usePlayerStore.getState().setFullscreen(false);
+              else if (onClose) onClose();
+              else usePlayerStore.getState().close();
+            }}
+          >
+            <MaterialCommunityIcons name={inline ? 'chevron-down' : 'chevron-down'} size={24} color="#fff" />
           </TouchableOpacity>
           <View style={styles.titleWrap}>
             <Text style={styles.titleText} numberOfLines={1}>{meta.title}</Text>
@@ -245,11 +253,14 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
-      {/* 暂停/停止态：中央大播放钮 */}
-      {!error && !isLive && !cardMode && state !== 'playing' && state !== 'loading' ? (
+      {/* 暂停/停止态：中央大播放钮（卡片态暂停也给钮：点 = 进全屏续播） */}
+      {!error && !isLive && state !== 'playing' && state !== 'loading' ? (
         <Pressable
           style={styles.centerPlayWrap}
-          onPress={() => { togglePlay(); }}
+          onPress={() => {
+            if (cardMode) usePlayerStore.getState().setFullscreen(true);
+            else togglePlay();
+          }}
         >
           <View style={styles.centerPlayBtn}>
             <MaterialCommunityIcons name="play" size={26} color="#16181c" style={{ marginLeft: 4 }} />
@@ -272,6 +283,12 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         style={StyleSheet.absoluteFill}
         onPress={(e) => {
           if (inline && !fullscreen) {
+            // 音频/纯音频源：无画面可全屏——点击即播放/暂停（音频条语义）
+            if (source.kind === 'audio' || source.audioOnly) {
+              togglePlay();
+              return;
+            }
+            // 视频卡片：点击直接进全屏（卡片态干净无控制坞）
             usePlayerStore.getState().setFullscreen(true);
             return;
           }
@@ -331,7 +348,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
                 />
               </TouchableOpacity>
             ) : null}
-            {!inline ? (
+            {!inline || fullscreen ? (
               <TouchableOpacity style={styles.ctrlBtn} onPress={toggleFullscreen} activeOpacity={0.75}>
                 <MaterialCommunityIcons name={fullscreen ? 'fullscreen-exit' : 'fullscreen'} size={21} color="rgba(255,255,255,0.92)" />
               </TouchableOpacity>
