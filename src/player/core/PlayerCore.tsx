@@ -21,6 +21,8 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const position = usePlayerStore((s) => s.position);
   const nativeRef = useRef<NativeKernelHandle>(null);
   const webRef = useRef<WebKernelHandle>(null);
+  /** 诊断去重：记录上次已打日志的内核|源（⚠️ 必须放所有条件 return 之前——Hook 铁律） */
+  const lastLogged = useRef('');
 
   const setState = usePlayerStore((s) => s.setState);
   const setPosition = usePlayerStore((s) => s.setPosition);
@@ -90,12 +92,13 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
     [setError, setState],
   );
 
+  // 内核选择（仅依赖 store，不依赖 source，须在条件 return 前算出）
+  const kernel = useWebKernel ? 'web' : activeKernel;
+
   if (!source || !source.url) return null;
 
   const paused = state !== 'playing';
-  const kernel = useWebKernel ? 'web' : activeKernel;
-  // 诊断：每次开播记录所选内核与源（runtimeLog）
-  const lastLogged = useRef('');
+  // 诊断：每次开播记录所选内核与源（runtimeLog；非 hook，可放 return 后）
   if (lastLogged.current !== `${kernel}|${source.url}`) {
     lastLogged.current = `${kernel}|${source.url}`;
     try { logWarn(`[player] open kernel=${kernel} state=${state} kind=${source.kind} url=${String(source.url).slice(0, 90)}`, 'player.core'); } catch {}
