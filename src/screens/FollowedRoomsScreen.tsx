@@ -1673,7 +1673,8 @@ export default function FollowedRoomsScreen() {
           // 录播回放（replayHint 且非 rtmp 推流）走可拖进度的 vod 内核
           const isVod = !next.isLive && !isLiveStreamUrl(next.url);
           setRoomPlayer({ ...next, isLive: !isVod, needsVlc: next.needsVlc || streamNeedsProxy(next.url) });
-          setRoomPlayerFullscreen(true);
+          // 默认竖屏播放（同视频）；用户手动点全屏才横屏——不要一进就横屏沉浸
+          setRoomPlayerFullscreen(false);
         } catch (e) {
           Alert.alert(t('播放失败'), errorMessage(e));
         }

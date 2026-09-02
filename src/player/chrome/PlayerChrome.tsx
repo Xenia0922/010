@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { usePlayerStore } from '../store/playerStore';
@@ -49,6 +49,15 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const rate = usePlayerStore((s) => s.rate);
   const [moreVisible, setMoreVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 控制条淡入淡出
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(controlsOpacity, {
+      toValue: controlsVisible ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [controlsVisible, controlsOpacity]);
   // 进度条拖动：比例 → seek（录播定位；进度条触控区加高避免误触）
   const progTrackRef = useRef<View>(null);
   const progW = useRef(0);
@@ -69,8 +78,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     usePlayerStore.getState().toggleControls(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
+      // 播放中才自动隐藏（全屏同样隐藏）；暂停/缓冲保持显示（用户在操作/看画面）
       const s = usePlayerStore.getState();
-      if (!s.fullscreen) s.toggleControls(false);
+      if (s.state === 'playing') s.toggleControls(false);
     }, CONTROLS_HIDE_MS);
   }, []);
 
@@ -153,7 +163,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     <>
       {/* 顶栏（内嵌模式不显示）：顶部渐变遮罩保证白字可读 */}
       {!inline ? (
-        <View style={[styles.topWrap, { opacity: controlsVisible ? 1 : 0 }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
+        <Animated.View style={[styles.topWrap, { opacity: controlsOpacity }]} pointerEvents={controlsVisible ? 'auto' : 'none'}>
           <LinearGradient colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0)']} style={StyleSheet.absoluteFill} />
           <TouchableOpacity style={styles.topBtn} onPress={() => { if (onClose) onClose(); else usePlayerStore.getState().close(); }}>
             <MaterialCommunityIcons name="chevron-down" size={24} color="#fff" />
@@ -170,7 +180,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           <TouchableOpacity style={styles.topBtn} onPress={() => setMoreVisible(true)}>
             <MaterialCommunityIcons name="dots-horizontal" size={22} color="#fff" />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       ) : null}
 
       {/* 错误浮层 */}
@@ -195,12 +205,13 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           唤出层始终可点（控制条隐藏后点屏幕任意处唤出）；渐变/坞内容按 controlsVisible 显隐 */}
       <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
       <View style={StyleSheet.absoluteFill} pointerEvents={controlsVisible ? 'box-none' : 'none'}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
-          style={[styles.bottomShade, { opacity: controlsVisible ? 1 : 0 }]}
-        />
-        <View style={styles.dockWrap} pointerEvents="box-none">
+        <Animated.View pointerEvents="none" style={{ opacity: controlsOpacity }}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
+            style={styles.bottomShade}
+          />
+        </Animated.View>
+        <Animated.View style={[styles.dockWrap, { opacity: controlsOpacity }]} pointerEvents="box-none">
           {/* 进度行：当前时间 —— 可拖进度 —— 总时间（直播仅显示 直播） */}
           <View style={styles.progressRow}>
             {!isLive ? <Text style={styles.timeText}>{formatPlayTime(position)}</Text> : null}
@@ -249,7 +260,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
               </TouchableOpacity>
             ) : null}
           </View>
-        </View>
+        </Animated.View>
       </View>
 
       {/* 更多面板 */}
