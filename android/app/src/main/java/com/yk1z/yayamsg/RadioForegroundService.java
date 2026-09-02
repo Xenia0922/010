@@ -79,8 +79,9 @@ public class RadioForegroundService extends Service {
         ? new Notification.Builder(this, CHANNEL_ID)
         : new Notification.Builder(this);
     builder.setSmallIcon(R.mipmap.ic_launcher)
-        .setContentTitle("牙牙消息")
-        .setContentText(text)
+        // 标题显示当前曲目（锁屏/通知栏可见在播什么），无标题时回退 App 名
+        .setContentTitle((radioTitle == null || radioTitle.isEmpty()) ? "牙牙消息" : radioTitle)
+        .setContentText("牙牙消息 · 后台播放中")
         .setOngoing(true)
         .setContentIntent(contentPi)
         .addAction(0, "停止", stopPi);

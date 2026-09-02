@@ -112,6 +112,11 @@ export default function MusicLibraryScreen() {
   const loadingRef = useRef(false);
   const videoRef = useRef<any>(null);
 
+  // 收藏计数：与 FAV 列表（isFavorite 过滤）一致，避免显示旧 id 键造成的虚高
+  const favCount = useMemo(
+    () => songs.filter((t) => useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''))).length,
+    [songs, favorites],
+  );
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
@@ -120,6 +125,7 @@ export default function MusicLibraryScreen() {
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
   }, [query, songs, group, favorites]);
+  const queueSource = useMemo(() => filteredSongs.map((t) => ({ ...t })), [filteredSongs]);
 
   // 双源合并：官方源（口袋48官网静态 JS）+ R2 音乐库（music.gnz.hk 公演音频，1559 首）。
   // 去重键 title|artist（官方源优先）；任一源失败不阻塞另一源，合并结果为空才报错。
@@ -153,6 +159,13 @@ export default function MusicLibraryScreen() {
         if (seen.has(key)) return;
         seen.add(key);
         merged.push(t);
+      });
+      // 排序：先按团（groupLabel）再按标题，官方/R2 同团混排——避免 R2 1559 首全部堆在列表尾部
+      merged.sort((a: any, b: any) => {
+        const ga = String(a.groupLabel || '').trim().toLowerCase();
+        const gb = String(b.groupLabel || '').trim().toLowerCase();
+        if (ga !== gb) return ga < gb ? -1 : 1;
+        return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
       });
       setSongs(merged);
       setHasMore(false);
@@ -225,9 +238,9 @@ export default function MusicLibraryScreen() {
       setShowFullScreen(true);
       return;
     }
-    // 克隆队列：播放器 store 与列表 songs 解耦，避免共享同一批对象引用时，
-    // 任何播放态写入（或 FlatList 复用）反噬列表渲染。
-    MusicEngine.playTrack(item, filteredSongs.map((t) => ({ ...t })));
+    // 克隆队列：播放器 store 与列表 songs 解耦（避免引用共享反噬渲染）。
+    // queueSource 由 useMemo 缓存——仅在 filteredSongs 变化时克隆一次，点歌零克隆开销
+    MusicEngine.playTrack(item, queueSource);
     setShowFullScreen(true);
   };
 
@@ -282,7 +295,7 @@ export default function MusicLibraryScreen() {
                   { color: group === g ? palette.onTint : palette.labelSecondary },
                 ]}
               >
-                {g === 'FAV' ? t('收藏{count}', { count: favorites.length ? `(${favorites.length})` : '' }) : t(GROUP_LABELS[g] || g)}
+                {g === 'FAV' ? t('收藏{count}', { count: favCount ? `(${favCount})` : '' }) : t(GROUP_LABELS[g] || g)}
               </Text>
             </ScalePressable>
           ))}
@@ -318,7 +331,19 @@ export default function MusicLibraryScreen() {
         </View>
       ) : !loading && songs.length === 0 && !status ? (
         <View style={styles.emptyWrap}>
-          <EmptyState icon="music-off" title={t('暂无音乐')} hint={t('点击右上角刷新，拉取官方曲库')} />
+          <EmptyState
+            icon="music-off"
+            title={group === 'FAV' ? t('还没有收藏歌曲') : t('暂无音乐')}
+            hint={group === 'FAV' ? t('点歌曲封面右下角的 ♥ 即可收藏') : t('点击右上角刷新，拉取官方曲库')}
+          />
+        </View>
+      ) : !loading && filteredSongs.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            icon="magnify-close"
+            title={t('没有匹配的歌曲')}
+            hint={t('换个关键词或分团试试')}
+          />
         </View>
       ) : (
       <PerfFlatList
@@ -367,9 +392,9 @@ export default function MusicLibraryScreen() {
                     }}
                   >
                     <MaterialCommunityIcons
-                      name={favorites.includes(String(item.musicId || item.id || '')) ? 'heart' : 'heart-outline'}
+                      name={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')) ? 'heart' : 'heart-outline'}
                       size={20}
-                      color={favorites.includes(String(item.musicId || item.id || '')) ? palette.danger : palette.onTint}
+                      color={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')) ? palette.danger : palette.onTint}
                     />
                   </ScalePressable>
                 </View>
@@ -382,6 +407,12 @@ export default function MusicLibraryScreen() {
                     {item.ctime ? (
                       <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
                         {formatTimestamp(item.ctime).slice(0, 10)}
+                      </Text>
+                    ) : item.durationSec ? (
+                      <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
+                        {item.durationSec >= 3600
+                          ? `${Math.floor(item.durationSec / 3600)}:${String(Math.floor((item.durationSec % 3600) / 60)).padStart(2, '0')}:${String(item.durationSec % 60).padStart(2, '0')}`
+                          : `${Math.floor(item.durationSec / 60)}:${String(item.durationSec % 60).padStart(2, '0')}`}
                       </Text>
                     ) : null}
                   </View>
