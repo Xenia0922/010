@@ -1090,6 +1090,9 @@ export default function FollowedRoomsScreen() {
   }, [roomMeta.bg, bgOpacity]);
   const activeChannelRef = useRef('');
   const roomSeqRef = useRef(0); // Y22: 进房序号（快速切房丢弃慢响应）
+  const msgListRef = useRef<any>(null); // 消息列表 ref（开房置顶最新用）
+  // 消息列表 ref：开房/大小房间切换数据到位后滚回顶部（最新消息）——
+  // 否则旧房间滚动 offset 套到新房间数据上「滑动位置不对」（用户反馈）
 
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const loadingMoreMessagesRef = useRef(false);
@@ -1479,6 +1482,8 @@ export default function FollowedRoomsScreen() {
       // Y22: 进房竞态——用户已切到别的房间/模式，丢弃慢响应，避免旧房间消息覆盖新房间
       if (openSeq !== roomSeqRef.current) return;
       setRoomMessages(sorted);
+      // 开房/大小房间切换：数据到位后滚回顶部看最新（旧 offset 不复用 → 不错乱）
+      msgListRef.current?.scrollToOffset?.({ offset: 0, animated: false });
       setRoomLoadedOnce(true);
       setRoomMsgError('');
       logInfo(`[room] 进房 ${room.ownerName || channelId} ${nextMode} 消息加载耗时 ${Date.now() - roomOpenStart}ms (${sorted.length}条)`, 'room');
@@ -1634,18 +1639,25 @@ export default function FollowedRoomsScreen() {
     let next = media;
     try {
       if (media.type === 'live' || media.liveId) {
-        // v2.7: 点击即进统一播放器（MediaScreen 内先渲染播放器 shell 再解析地址并播放）。
-        // 不再在房间页前置解析（串行接口解析慢、失败时用户被留在列表页，体验差）；
-        // 播放器内有「正在解析…」loading 与失败重试反馈。
-        const targetMode = media.isLive ? 'live' : 'vod';
-        navigation.navigate('Media', {
-          mode: targetMode,
-          playLiveId: media.liveId,
-          playTitle: media.title,
-          playCover: media.cover,
-          playNonce: Date.now(),
-          fromRoom: true,
-        });
+        // 房间内全屏统一播放器直接播（PlayerScreen，kind=live/vod）——
+        // 不再 navigate('Media') 切到「直播」tab：切 tab 后关闭播放器会停在直播列表页而非房间（用户反馈）
+        try {
+          let next = media;
+          if (!next.url && next.liveId) {
+            // 无现成流地址：按 liveId 解析（详情接口多层兜底）
+            next = await resolveRoomLiveMedia(media);
+          }
+          if (!next.url) {
+            showToast(t('无法解析直播地址，请重试'));
+            return;
+          }
+          // 录播回放（replayHint 且非 rtmp 推流）走可拖进度的 vod 内核
+          const isVod = !next.isLive && !isLiveStreamUrl(next.url);
+          setRoomPlayer({ ...next, isLive: !isVod, needsVlc: next.needsVlc || streamNeedsProxy(next.url) });
+          setRoomPlayerFullscreen(true);
+        } catch (e) {
+          Alert.alert(t('播放失败'), errorMessage(e));
+        }
         return;
       }
       if (next.type === 'video') {
@@ -2143,6 +2155,7 @@ export default function FollowedRoomsScreen() {
 
         <FadeInView delay={80} duration={300} style={{ flex: 1 }}>
           <PerfFlatList
+            ref={msgListRef}
             // 始终用 chatRows：internal 切换保留上一帧（秒切，无割裂）；
             // enter 跨房间时 roomMessages 已被 openRoom 清空，自然走 ListEmptyComponent 的「加载中」
             data={chatRows}
