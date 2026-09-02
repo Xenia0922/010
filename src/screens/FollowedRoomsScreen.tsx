@@ -533,6 +533,20 @@ function isLiveStreamUrl(url: string): boolean {
   return lower.startsWith('rtmp://') || lower.includes('.flv') || lower.includes('.m3u8');
 }
 
+/**
+ * 房间点击判「是否录播（可拖进度 vod）」。事实：
+ * - 房间消息条目（roomMedia）同步构建、不带 isLive 标记；回放地址常见 HLS(.m3u8)/FLV 形态，
+ *   若把 .m3u8 一律当直播流，消息里的录播卡就全部套上直播播放器（无进度条）——本 bug 根因。
+ * - rtmp/flv 推流只可能是直播；消息明示回放(replayHint)即使 rtmp/flv 也按录播。
+ * - m3u8/mp4 二义：仅当明确带 isLive 标记（直播列表 record:false 命中 / 详情状态位）才直播，否则录播。
+ */
+function roomTapIsVod(next: RoomMedia): boolean {
+  if (next.replayHint) return true;
+  const u = String(next.url || '').toLowerCase();
+  if (u.startsWith('rtmp://') || u.includes('.flv')) return false;
+  return !next.isLive;
+}
+
 /** 从已拉取的直播/录播详情判断当前状态。
  *  口袋 48 接口的事实字段：录播详情带 content.msgFilePath / content.lrcUrl（LRC 弹幕文件，
  *  见 pocket48.getLiveLrc 的既有用法），直播详情带 isLiving / living / isEnd 等状态位。
@@ -1694,8 +1708,8 @@ export default function FollowedRoomsScreen() {
         return;
       }
       setLiveResolve(null);
-      // 录播回放（replayHint 且非 rtmp 推流）走可拖进度的 vod 内核；直播走 live 内核
-      const isVod = !resolved.isLive && !isLiveStreamUrl(resolved.url);
+      // 统一按「是否录播」判定（见 roomTapIsVod：replayHint 回放 / m3u8-mp4 无 live 标记 → vod 可拖）
+      const isVod = roomTapIsVod(resolved);
       setRoomPlayer({ ...resolved, isLive: !isVod, needsVlc: resolved.needsVlc || streamNeedsProxy(resolved.url) });
       // 默认竖屏播放（同视频）；用户手动点全屏才横屏——不要一进就横屏沉浸
       setRoomPlayerFullscreen(false);
@@ -1736,7 +1750,7 @@ export default function FollowedRoomsScreen() {
       if (media.type === 'live' || media.liveId) {
         // 已带可播地址：直接开播（零等待，不弹解析占位）
         if (media.url) {
-          const isVod = !media.isLive && !isLiveStreamUrl(media.url);
+          const isVod = roomTapIsVod(media);
           setRoomPlayer({ ...media, isLive: !isVod, needsVlc: media.needsVlc || streamNeedsProxy(media.url) });
           setRoomPlayerFullscreen(false);
           return;
