@@ -178,12 +178,6 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           </TouchableOpacity>
           <View style={styles.titleWrap}>
             <Text style={styles.titleText} numberOfLines={1}>{meta.title}</Text>
-            {isLive ? (
-              <View style={styles.liveTag}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveTagText}>{t('直播')}</Text>
-              </View>
-            ) : null}
           </View>
           <TouchableOpacity style={styles.topBtn} onPress={() => setMoreVisible(true)}>
             <MaterialCommunityIcons name="dots-horizontal" size={22} color="#fff" />
@@ -353,12 +347,6 @@ const styles = StyleSheet.create({
   },
   titleWrap: { flex: 1, marginHorizontal: 6, flexDirection: 'row', alignItems: 'center', minWidth: 0 },
   titleText: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  liveTag: {
-    flexDirection: 'row', alignItems: 'center', marginLeft: 8,
-    backgroundColor: 'rgba(255,111,145,0.22)', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2,
-  },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: TINT, marginRight: 4 },
-  liveTagText: { color: '#ffd3dd', fontSize: 10, fontWeight: '700' },
   bottomShade: {
     position: 'absolute', left: 0, right: 0, bottom: 0, height: 190,
   },
