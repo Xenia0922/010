@@ -188,9 +188,15 @@ export default function App() {
     }, 1200);
     // 启动静默检测最新版本：失败/无 Release 一律不打扰，设置页版本号红点由 store 驱动
     useUpdateStore.getState().checkUpdate().catch(() => {});
-    // R2 音乐列表预取（1MB/gnz.hk 慢）：后台拉取写缓存，进音乐库秒开
-    prefetchR2Music().catch(() => {});
-    return () => clearTimeout(timer);
+    // R2 音乐列表预取（1MB/gnz.hk 慢）：延迟到启动完全就绪后静默拉取写缓存，
+    // 进音乐库秒开；任何异常均被吞，不影响启动（如 Hermes 无 AbortController polyfill 也仅拉取失败）
+    const r2Timer = setTimeout(() => {
+      prefetchR2Music().catch(() => {});
+    }, 15000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(r2Timer);
+    };
   }, [ready]);
 
   const backgroundUri = customBackgroundFile?.trim();
