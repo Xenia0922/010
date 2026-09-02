@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { usePlayerStore } from '../store/playerStore';
@@ -26,6 +26,8 @@ interface Props {
 
 /** 控制条自动隐藏间隔 */
 const CONTROLS_HIDE_MS = 3500;
+/** 可用倍速档（点播/回放） */
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 /** 触控色（全屏黑底上固定亮色，不随主题） */
 const TINT = '#ff6f91';
 
@@ -48,6 +50,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const danmakuOn = usePlayerStore((s) => s.danmakuOn);
   const rate = usePlayerStore((s) => s.rate);
   const [moreVisible, setMoreVisible] = useState(false);
+  const [rateSheetVisible, setRateSheetVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 控制条淡入淡出
   const controlsOpacity = useRef(new Animated.Value(1)).current;
@@ -109,10 +112,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     showControls();
   };
 
-  const cycleRate = () => {
-    const cur = usePlayerStore.getState().rate;
-    const next = cur === 1 ? 1.5 : cur === 1.5 ? 2 : 1;
-    usePlayerStore.getState().setRate(next);
+  const pickRate = (r: number) => {
+    usePlayerStore.getState().setRate(r);
+    setRateSheetVisible(false);
     showControls();
   };
 
@@ -201,6 +203,14 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
+      {/* 缓冲/加载中：中央转圈（内核 onLoad 前；仅在非 error 时） */}
+      {state === 'loading' && !error ? (
+        <View style={styles.loadingWrap} pointerEvents="none">
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>{t('加载中…')}</Text>
+        </View>
+      ) : null}
+
       {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行）。
           唤出层始终可点（控制条隐藏后点屏幕任意处唤出）；渐变/坞内容按 controlsVisible 显隐 */}
       <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
@@ -241,8 +251,8 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
             </Text>
             <View style={{ flex: 1 }} />
             {features.rate && !isLive && !useWebKernel ? (
-              <TouchableOpacity style={styles.ctrlBtn} onPress={cycleRate} activeOpacity={0.75}>
-                <Text style={styles.rateText}>{rate}x</Text>
+              <TouchableOpacity style={styles.ctrlBtn} onPress={() => setRateSheetVisible(true)} activeOpacity={0.75}>
+                <Text style={[styles.rateText, rate !== 1 && { color: TINT }]}>{rate}x</Text>
               </TouchableOpacity>
             ) : null}
             {features.danmaku && !useWebKernel ? (
@@ -262,6 +272,27 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           </View>
         </Animated.View>
       </View>
+
+      {/* 倍速抽屉（点播/回放） */}
+      <Modal visible={rateSheetVisible} transparent animationType="slide" onRequestClose={() => setRateSheetVisible(false)}>
+        <TouchableOpacity activeOpacity={1} style={styles.rateMask} onPress={() => setRateSheetVisible(false)}>
+          <View style={[styles.rateSheet, { backgroundColor: palette.surface }]}>
+            <Text style={[styles.rateSheetTitle, { color: palette.labelSecondary }]}>{t('播放速度')}</Text>
+            <View style={styles.rateGrid}>
+              {RATES.map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.rateChip, { backgroundColor: rate === r ? palette.tintSoft : palette.fill2, borderColor: rate === r ? palette.tint : 'transparent' }]}
+                  onPress={() => pickRate(r)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.rateChipText, { color: rate === r ? palette.tint : palette.label }]}>{r}x</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* 更多面板 */}
       <Modal visible={moreVisible} transparent animationType="slide" onRequestClose={() => setMoreVisible(false)}>
@@ -349,6 +380,17 @@ const styles = StyleSheet.create({
   ctrlHintText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginLeft: 8, flexShrink: 1 },
   ctrlBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   rateText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  loadingWrap: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 20,
+    alignItems: 'center', justifyContent: 'center', gap: 10,
+  },
+  loadingText: { color: '#fff', fontSize: 12, opacity: 0.85 },
+  rateMask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  rateSheet: { borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingBottom: 30, paddingTop: 14, paddingHorizontal: 16 },
+  rateSheetTitle: { fontSize: 12, textAlign: 'center', marginBottom: 10 },
+  rateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  rateChip: { width: '30%', paddingVertical: 10, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  rateChipText: { fontSize: 14, fontWeight: '700' },
   errorWrap: {
     position: 'absolute', left: 24, right: 24, top: '42%', zIndex: 40,
     alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 12, padding: 14,
