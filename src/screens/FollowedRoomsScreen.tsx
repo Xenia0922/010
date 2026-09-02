@@ -582,16 +582,16 @@ async function resolveRoomLiveMedia(media: RoomMedia): Promise<RoomMedia> {
       // 消息明示回放（录播卡）
       return { ...media, liveId, title, url: ownUrl, isLive: false, needsVlc: streamNeedsProxy(ownUrl) };
     }
-    // m3u8/mp4 二义（直播流与回放流同形）：有 liveId 则查「正在直播」列表二次验证
-    let isLive = false;
+    // m3u8/mp4 二义（直播流与回放流同形）：先查「正在直播」列表二次验证；查询失败/无 liveId
+    // 时回退 URL 形态判定（直播优先——避免把直播流误判成录播导致「放不了」）
+    let isLive = isLiveStreamUrl(lower);
     if (liveId) {
       try {
         const found = await findLiveItem(await pocketApi.getLiveList({ record: false, debug: true, next: 0 }), liveId);
         isLive = !!found;
-      } catch { /* 查询失败：按 URL 形态兜底 */ }
-    }
-    if (!isLive && !liveId) {
-      isLive = isLiveStreamUrl(lower) && !lower.includes('.mp4'); // 纯 m3u8 无 liveId 且无明确信息 → 默认回放
+      } catch {
+        isLive = isLiveStreamUrl(lower); // 查询失败：直播优先（保证直播可放）
+      }
     }
     return { ...media, liveId, title, url: ownUrl, isLive, needsVlc: streamNeedsProxy(ownUrl) };
   }

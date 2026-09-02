@@ -656,7 +656,8 @@ const styles = StyleSheet.create({
   albumBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6 },
   playAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6 },
   playAllText: { fontSize: 12, fontWeight: '700' },
-  albumItem: { flex: 1, marginBottom: 12, marginHorizontal: 5 },
+  // 显式半宽：flex:1 在 FlatList cell 上会把单张专辑拉伸成整行大图
+  albumItem: { width: '48.5%', marginBottom: 12, marginHorizontal: 5 },
   albumCover: { width: '100%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden' },
   albumCountPill: { position: 'absolute', right: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   albumCountText: { color: '#fff', fontSize: 11, fontWeight: '700' },
