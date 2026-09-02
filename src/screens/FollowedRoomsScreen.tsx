@@ -319,7 +319,7 @@ function senderProfile(item: any, room: Member): SenderProfile {
     'userInfo.headImg',
     'message.avatar',
     'message.headImg',
-  ]) || deepFindText(objects, ['avatar', 'headImg', 'headUrl', 'picPath']));
+  ]) || deepFindText(objects, ['senderAvatar', 'avatar', 'headImg', 'headUrl'])); // 仅小头像字段，勿深扫 picPath 大图
 
   return {
     id,
