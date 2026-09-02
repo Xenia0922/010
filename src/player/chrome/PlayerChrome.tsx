@@ -133,6 +133,8 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 
   const playing = state === 'playing';
   const isLive = source.kind === 'live';
+  // 卡片内嵌态（inline 且未全屏）：不叠任何控制坞，点击即进全屏
+  const cardMode = inline && !fullscreen;
   const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;
   // 拖动中显示本地预览比例与目标时间（跟手），不依赖高频 store 写入
   const shownRatio = dragRatio != null ? dragRatio : progRatio;
@@ -244,7 +246,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
       ) : null}
 
       {/* 暂停/停止态：中央大播放钮 */}
-      {!error && !isLive && state !== 'playing' && state !== 'loading' ? (
+      {!error && !isLive && !cardMode && state !== 'playing' && state !== 'loading' ? (
         <Pressable
           style={styles.centerPlayWrap}
           onPress={() => { togglePlay(); }}
@@ -265,15 +267,20 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
 
       {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行）。
           唤出层始终可点（控制条隐藏后点屏幕任意处唤出）；渐变/坞内容按 controlsVisible 显隐 */}
-      {/* 双击快进/回退 + 单击唤出层（全屏播放器；inline 内嵌点按即唤出） */}
+      {/* 双击快进/回退 + 单击唤出层。inline 卡片态：点击直接进全屏（卡片不叠控制坞） */}
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={(e) => {
+          if (inline && !fullscreen) {
+            usePlayerStore.getState().setFullscreen(true);
+            return;
+          }
           if (inline) { showControls(); return; }
           const x = e.nativeEvent.locationX ?? 0;
           onVideoTap(x < screenW / 2 ? 'l' : 'r');
         }}
       />
+      {!cardMode ? (
       <View style={StyleSheet.absoluteFill} pointerEvents={controlsVisible ? 'box-none' : 'none'}>
         <Animated.View pointerEvents="none" style={{ opacity: controlsOpacity }}>
           <LinearGradient
@@ -332,6 +339,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
           </View>
         </Animated.View>
       </View>
+      ) : null}
 
       {/* 倍速抽屉（点播/回放） */}
       <Modal visible={rateSheetVisible} transparent animationType="slide" onRequestClose={() => setRateSheetVisible(false)}>
