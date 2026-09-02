@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import PlayerScreen, { buildPocketHeaders } from '../player';
+import { usePlayerStore } from '../player/store/playerStore';
 import officialMediaApi from '../api/officialMedia';
 import { useI18n } from '../i18n';
 import { FadeInView, ScalePressable } from '../components/Motion';
