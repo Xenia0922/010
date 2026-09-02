@@ -1090,32 +1090,7 @@ export default function FollowedRoomsScreen() {
   }, [roomMeta.bg, bgOpacity]);
   const activeChannelRef = useRef('');
   const roomSeqRef = useRef(0); // Y22: 进房序号（快速切房丢弃慢响应）
-  // 消息列表滚动进度记忆：按 channelId 分别记录（大房间/小房间 channelId 不同 → 天然分开）
-  const msgListRef = useRef<any>(null);
-  const msgScrollCache = useRef<Record<string, number>>({});
-  const msgScrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const onMsgScroll = useCallback((e: any) => {
-    const y = Number(e?.nativeEvent?.contentOffset?.y) || 0;
-    const cid = activeChannelRef.current;
-    if (!cid) return;
-    if (msgScrollSaveTimer.current) clearTimeout(msgScrollSaveTimer.current);
-    msgScrollSaveTimer.current = setTimeout(() => {
-      msgScrollSaveTimer.current = null;
-      msgScrollCache.current[cid] = y;
-    }, 250);
-  }, []);
-  // 房间数据就绪（含切大/小房间 internal 覆盖）后恢复该房间上次滚动位置
-  useEffect(() => {
-    if (!roomLoadedOnce) return;
-    const cid = activeChannelRef.current;
-    const target = cid ? msgScrollCache.current[cid] : 0;
-    if (target > 0 && msgListRef.current) {
-      const t = setTimeout(() => {
-        msgListRef.current?.scrollToOffset?.({ offset: target, animated: false });
-      }, 60);
-      return () => clearTimeout(t);
-    }
-  }, [roomLoadedOnce, roomMode]);
+
   const [loadingMoreMessages, setLoadingMoreMessages] = useState(false);
   const loadingMoreMessagesRef = useRef(false);
   // 实时刷新进行中标志：与 loadMore 互斥，避免两者同时 setRoomMessages 造成列表重排/滚动弹回
@@ -2168,7 +2143,6 @@ export default function FollowedRoomsScreen() {
 
         <FadeInView delay={80} duration={300} style={{ flex: 1 }}>
           <PerfFlatList
-            ref={msgListRef}
             // 始终用 chatRows：internal 切换保留上一帧（秒切，无割裂）；
             // enter 跨房间时 roomMessages 已被 openRoom 清空，自然走 ListEmptyComponent 的「加载中」
             data={chatRows}
@@ -2178,8 +2152,6 @@ export default function FollowedRoomsScreen() {
             maxToRenderPerBatch={12}
             windowSize={7}
             removeClippedSubviews
-            onScroll={onMsgScroll}
-            scrollEventThrottle={120}
             onEndReached={loadMoreRoomMessages}
             onEndReachedThreshold={0.5}
             ListFooterComponent={
