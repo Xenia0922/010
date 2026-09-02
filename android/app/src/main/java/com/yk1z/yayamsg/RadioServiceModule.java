@@ -53,13 +53,37 @@ public class RadioServiceModule extends ReactContextBaseJavaModule {
   /** 开播/更新：启动前台保活服务并展示媒体通知（幂等，重复调用仅更新通知） */
   @ReactMethod
   public void updateMedia(String title, String cover, boolean isPlaying, double position, double duration) {
+    updateMediaEx(title, cover, "", "", isPlaying, position, duration);
+  }
+
+  /**
+   * 完整元数据更新：标题/封面/歌手/专辑 + 播放态与进度。
+   * JS 桥 startRadioForeground 的音乐调用走本方法（歌词另有 updateLyric 高频通道）。
+   */
+  @ReactMethod
+  public void updateMediaEx(String title, String cover, String artist, String album, boolean isPlaying, double position, double duration) {
     ReactApplicationContext context = getReactApplicationContext();
     Intent intent = new Intent(context, RadioForegroundService.class);
     intent.putExtra("title", title == null ? "" : title);
     intent.putExtra("cover", cover == null ? "" : cover);
+    intent.putExtra("artist", artist == null ? "" : artist);
+    intent.putExtra("album", album == null ? "" : album);
     intent.putExtra("isPlaying", isPlaying);
     intent.putExtra("position", position);
     intent.putExtra("duration", duration);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      context.startForegroundService(intent);
+    } else {
+      context.startService(intent);
+    }
+  }
+
+  /** 歌词行更新：更新通知展开区歌词文本并重发通知（行切换才调用，频率极低） */
+  @ReactMethod
+  public void updateLyric(String text) {
+    ReactApplicationContext context = getReactApplicationContext();
+    Intent intent = new Intent(context, RadioForegroundService.class);
+    intent.putExtra("lyric", text == null ? "" : text);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       context.startForegroundService(intent);
     } else {

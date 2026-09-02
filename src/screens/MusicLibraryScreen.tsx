@@ -577,7 +577,19 @@ export default function MusicLibraryScreen() {
       {/* Video 常驻（width:0 height:0），不做条件卸载，彻底消除 source+paused 同步翻转崩溃 */}
       <Video
         ref={videoRef}
-        source={{ uri: playUrl || '', headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }}
+        source={{
+          uri: playUrl || '',
+          headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' },
+          // AWS 流播放中偶发卡顿（缓冲耗尽 rebuffer）：加大 Exo 缓冲池 + 回看缓冲，
+          // 瞬时网络抖动不出进度条回退；backBufferDurationMs 支持后退 30s 不二次缓冲
+          bufferConfig: {
+            minBufferMs: 15000,
+            maxBufferMs: 60000,
+            bufferForPlaybackMs: 5000,
+            bufferForPlaybackAfterRebufferMs: 10000,
+            backBufferDurationMs: 30000,
+          },
+        }}
         style={styles.tinyPlayer}
         paused={playbackState !== 'playing'}
         // 单曲循环用原生 repeat（无缝、无 seek(0) 重新缓冲的卡顿）；onEnd 仅处理顺序/随机切歌

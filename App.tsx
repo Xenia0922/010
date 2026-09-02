@@ -10,7 +10,7 @@ import { fetchJson } from './src/utils/network';
 import { loadCachedMemberData } from './src/services/memberData';
 import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
-import { startRadioForeground, stopRadioForeground, onRadioStopRequested, onRadioControlRequested } from './src/native/LivePlayer';
+import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioStopRequested, onRadioControlRequested } from './src/native/LivePlayer';
 import { ensureNotificationPermission } from './src/utils/notifications';
 import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
@@ -64,6 +64,17 @@ initRuntimeLog().catch(() => {});
  * （通知栏「停止」+ WAKE_LOCK，后台/锁屏续播、防进程被杀），停止播放时结束服务。
  * 电台（RoomRadioScreen）自带前台服务，两路共用同一 Service，不会同时播放冲突。
  */
+/** 取 pos 时刻命中的歌词行下标（-1 = 无歌词/未开始） */
+function currentLyricIndex(lines: Array<{ time: number; text: string }>, pos: number): number {
+  if (!lines || lines.length === 0) return -1;
+  let idx = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].time <= pos + 0.4) idx = i;
+    else break;
+  }
+  return idx;
+}
+
 function MusicForegroundBridge() {
   // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
   useEffect(() => {
@@ -85,11 +96,18 @@ function MusicForegroundBridge() {
       const now = Date.now();
       if (now - lastNotify.current < 5000 && track?.title) return;
       lastNotify.current = now;
-      const cover = String((track as any)?.coverUrl || (track as any)?.cover || '') || '';
+      const cover = String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
+      const artistText = String((track as any)?.artist || (track as any)?.groupLabel || '');
+      const albumText = String((track as any)?.album || '');
+      const lyrIdx = currentLyricIndex(st.lyrics, st.position);
+      const lyricText = lyrIdx >= 0 && st.lyrics[lyrIdx] ? st.lyrics[lyrIdx].text : '';
       ensureNotificationPermission().then(() => {
         startRadioForeground({
           title: track?.title || '音乐',
           cover,
+          artist: artistText,
+          album: albumText,
+          lyric: lyricText,
           isPlaying: true,
           position: st.position,
           duration: st.duration,
@@ -100,6 +118,23 @@ function MusicForegroundBridge() {
     }
     // paused 保留前台服务（通知仍在，可继续/停止）；error 由 MusicEngine 自动跳歌处理
   }, [playbackState, currentIndex, position]);
+  // 歌词行变化 → 更新通知展开区歌词（行切换才发，节流无碍）
+  const lyrics = useMusicPlayerStore((s) => s.lyrics);
+  const lastLyricIdx = useRef(-1);
+  const playing = playbackState === 'playing';
+  useEffect(() => {
+    if (!playing) {
+      lastLyricIdx.current = -1;
+      return;
+    }
+    const idx = currentLyricIndex(lyrics, position);
+    if (idx !== lastLyricIdx.current) {
+      lastLyricIdx.current = idx;
+      const text = idx >= 0 && lyrics[idx] ? lyrics[idx].text : '';
+      updateRadioLyric(text);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, lyrics, position]);
   // 通知栏「停止」→ 暂停音乐 + 结束前台服务
   useEffect(() => onRadioStopRequested(() => {
     stopRadioForeground();

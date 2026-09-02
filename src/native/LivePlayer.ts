@@ -55,10 +55,16 @@ export const LiveExoView = Platform.OS === 'android'
     }>('LiveExoView')
   : null;
 
-/** 媒体通知数据（MediaStyle：标题/封面/播放态/进度） */
+/** 媒体通知数据（MediaStyle：标题/封面/歌手/专辑/歌词/播放态/进度） */
 export interface RadioMediaInfo {
   title: string;
   cover?: string;
+  /** 歌手/团体（通知副标题第一段） */
+  artist?: string;
+  /** 专辑名（通知副标题第二段） */
+  album?: string;
+  /** 当前歌词行（展开通知显示；行变化用 updateRadioLyric 独立高频通道） */
+  lyric?: string;
   isPlaying: boolean;
   position?: number;
   duration?: number;
@@ -71,13 +77,25 @@ export function startRadioForeground(info: string | RadioMediaInfo) {
     RadioServiceModule.updateMedia(info, '', false, 0, 0);
     return;
   }
-  RadioServiceModule.updateMedia(
+  const fn = RadioServiceModule.updateMediaEx || RadioServiceModule.updateMedia;
+  fn(
     info.title || '',
     info.cover || '',
+    info.artist || '',
+    info.album || '',
     !!info.isPlaying,
     Number(info.position) || 0,
     Number(info.duration) || 0,
   );
+}
+
+/**
+ * 歌词行更新（通知展开区歌词随播放滚动）。
+ * 独立于 5s 节流的元数据通道：只在歌词行切换时调用（每秒最多几次，开销极小）。
+ */
+export function updateRadioLyric(text: string) {
+  if (Platform.OS !== 'android' || !RadioServiceModule?.updateLyric) return;
+  RadioServiceModule.updateLyric(String(text || ''));
 }
 
 /** 停播电台：结束前台保活服务并移除通知 */

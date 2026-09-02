@@ -48,12 +48,68 @@ type TrackUrlResolver = (track: Track) => Promise<string | null>;
  * 不再持有 Video ref、不再做 seek、不再拦截 onProgress。
  * Video 的 seek / progress / duration 由 MusicLibraryScreen 上的 <Video> 独立管理。
  */
+const PLAY_UA = 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)';
+const PLAY_REFERER = 'https://h5.48.cn/';
+
+function trackKey(track: Track): string {
+  return String((track as any).musicId || (track as any).id || `${track.title}|${track.artist || ''}`);
+}
+
 export const MusicEngine = {
   get state() { return useMusicPlayerStore.getState(); },
   _urlResolver: null as TrackUrlResolver | null,
   // 播放请求序号：快速连点 play/resume 时递增，仅最新请求的 URL 解析结果可写回 store，
   // 防止慢响应（旧曲目解析晚于新曲目）覆盖当前播放曲目导致「播错歌」。
   _playSeq: 0,
+  // 预热地址缓存：trackKey → 已解析 URL（预加载下一首/起播提速，AWS 冷边首连慢）
+  _warmUrls: new Map<string, string>(),
+
+  /** 对 URL 发一次极小 Range 请求，提前打通 AWS/CDN 边缘与 TLS（后续 Exo 拉流更快、少卡起播） */
+  async _warmUrl(url: string): Promise<void> {
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 6000);
+      try {
+        await fetch(url, {
+          headers: { Range: 'bytes=0-4095', 'User-Agent': PLAY_UA, Referer: PLAY_REFERER },
+          signal: ctl.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // 预热失败不影响播放（静默）
+    }
+  },
+
+  /** 预加载下一首：后台解析 URL + Range 预热 + 缓存，切歌时零等待起播 */
+  _prewarmNextTrack(): void {
+    const st = useMusicPlayerStore.getState();
+    const q = st.queue || [];
+    if (q.length < 2) return;
+    let n = -1;
+    if (st.playMode === 'single') return; // 单曲循环重复同一 URL，无预热意义
+    if (st.playMode === 'random') {
+      if (q.length > 1) {
+        n = Math.floor(Math.random() * q.length);
+        if (n === st.currentIndex) n = (n + 1) % q.length;
+      }
+    } else {
+      n = (st.currentIndex + 1) % q.length;
+    }
+    if (n < 0 || n === st.currentIndex) return;
+    const nextTrack = q[n];
+    if (!nextTrack || this._warmUrls.has(trackKey(nextTrack))) return;
+    this._initDefaultResolver();
+    this._waitForResolver().then((resolver) => {
+      if (!resolver) return;
+      resolver(nextTrack).then((url) => {
+        if (!url || !/^https?:/i.test(url)) return;
+        this._warmUrls.set(trackKey(nextTrack), url);
+        this._warmUrl(url);
+      }).catch(() => {});
+    });
+  },
 
   setUrlResolver(resolver: TrackUrlResolver) {
     this._urlResolver = resolver;
@@ -154,13 +210,17 @@ export const MusicEngine = {
     if (seq !== this._playSeq) return; // 等待期间用户已发起更新的播放请求
     if (!resolver) { store.setError('解析器未就绪'); return; }
     try {
-      const url = await resolver(track);
+      // 已预热的曲目（切歌路径）直接取缓存地址，跳过解析网络往返
+      const warmed = this._warmUrls.get(trackKey(track));
+      const url = warmed || await resolver(track);
       if (seq !== this._playSeq) return; // 解析期间用户已切换曲目，丢弃旧响应
       if (!url) throw new Error('no url');
       if (!isPlayableHost(url)) throw new Error('不支持的播放源');
       if (!/^https?:\/\//i.test(url)) throw new Error('非法播放地址');
       store.setUrl(url);
       store.setPlaybackState('playing');
+      // 后台预解析 + Range 预热下一首：切歌/下一首起播不再等 AWS 冷连接
+      this._prewarmNextTrack();
     } catch (e: any) {
       if (seq !== this._playSeq) return;
       store.setError(e?.message || 'play failed');
@@ -188,13 +248,15 @@ export const MusicEngine = {
     if (seq !== this._playSeq) return null; // 已有更新的播放请求
     if (!resolver) { store.setError('解析器未就绪'); return null; }
     try {
-      const url = await resolver(track);
+      const warmed = this._warmUrls.get(trackKey(track));
+      const url = warmed || await resolver(track);
       if (seq !== this._playSeq) return null; // 解析期间用户已切换，丢弃旧响应
       if (!url) throw new Error('no url');
       if (!isPlayableHost(url)) throw new Error('不支持的播放源');
       if (!/^https?:\/\//i.test(url)) throw new Error('非法播放地址');
       store.setUrl(url);
       store.setPlaybackState('playing');
+      this._prewarmNextTrack();
       return track;
     } catch (e: any) {
       store.setError(e?.message || '恢复播放失败');
