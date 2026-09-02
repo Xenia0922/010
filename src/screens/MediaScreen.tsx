@@ -36,6 +36,7 @@ import { logWarn } from '../utils/runtimeLog';
 import pocketApi from '../api/pocket48';
 import { setLiveImmersiveMode } from '../native/LivePlayer';
 import PlayerScreen from '../player';
+import { usePlayerStore } from '../player/store/playerStore';
 import { DanmakuOverlay } from '../components/DanmakuOverlay';
 import DanmakuSettingsSheet from '../components/DanmakuSettingsSheet';
 import { parseDanmaku, DanmakuItem } from '../utils/danmaku';
@@ -692,16 +693,8 @@ export default function MediaScreen() {
     return () => { alive = false; };
   }, [playing?.url, playing?.isLive]);
 
-  // 回放时推进播放进度驱动弹幕：
-  //  - 网页播放器(WebView)无逐帧 onProgress，用 250ms 插值平滑（每 2s 由 onMessage 校正）
-  //  - 原生 Video 已有 onProgress 实时驱动，无需插值，避免与真实进度冲突
-  useEffect(() => {
-    if (!playing || playing.isLive) { setPlaybackTime(0); return; }
-    if (!useWebPlayer) { setPlaybackTime(webResumeTime || 0); return; }
-    setPlaybackTime(webResumeTime || 0);
-    const id = setInterval(() => setPlaybackTime((t) => t + 0.25), 250);
-    return () => clearInterval(id);
-  }, [playing?.url, playing?.isLive, webResumeTime, useWebPlayer]);
+  // R1: 弹幕时间轴统一由 playerStore.position 驱动（统一播放器接管后原生 onProgress 实时上报，
+  //     无需本地插值；旧 useWebPlayer 插值路径已随内核切换删除）
   const [rankStatus, setRankStatus] = useState('');
   const [announcement, setAnnouncement] = useState('');
   const [announceVisible, setAnnounceVisible] = useState(false);
@@ -717,6 +710,8 @@ export default function MediaScreen() {
   // 关注成员 id 集合：「关注」tag 实时筛选（60s 同步一次）
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [playbackTime, setPlaybackTime] = useState(0);
+  // R1: 弹幕时钟 = 统一播放器上报的真实进度（live 也在播中持续推进，对齐 poll 弹幕时间轴）
+  const danmakuClock = usePlayerStore((s) => s.position);
   // 播放器控制（哔哩哔哩风格自定义控制条）
   const videoRef = useRef<any>(null);
   const [duration, setDuration] = useState(0);
@@ -1181,16 +1176,6 @@ export default function MediaScreen() {
     return () => sub.remove();
   }, [playing, isFullscreen, isLandscape]);
 
-  // 横屏/全屏解耦：全屏=沉浸+横屏；横屏切换=仅旋转。两者任一为真即锁定横屏。
-  useEffect(() => {
-    if (!playing) return;
-    const wantLandscape = isFullscreen || isLandscape;
-    setLiveImmersiveMode(!!playing && isFullscreen);
-    ScreenOrientation.lockAsync(
-      wantLandscape ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP,
-    ).catch(() => {});
-  }, [isFullscreen, isLandscape, playing]);
-
   const closePlayer = () => {
     setIsFullscreen(false);
     setIsLandscape(false);
@@ -1576,7 +1561,7 @@ export default function MediaScreen() {
           >
             <DanmakuOverlay
               danmaku={danmaku}
-              currentTime={playbackTime}
+              currentTime={danmakuClock}
               visible={showDanmaku && !!playing}
               live={!!playing?.isLive}
             />

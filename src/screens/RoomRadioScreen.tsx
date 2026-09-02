@@ -150,19 +150,21 @@ export default function RoomRadioScreen() {
     }, 5 * 60 * 1000);
   };
 
-  const startRadio = async (member: Member, opts: { instantUrl?: string } = {}) => {
+  const startRadio = async (member: Member, opts: { instantUrl?: string; mode?: 'big' | 'small' } = {}) => {
+    // 显式 mode 优先（R3：setRoomMode 同 tick 调 startRadio 时 state/ref 均还是旧值，必须显式传参）
+    const mode = opts.mode ?? roomModeRef.current;
     setSelectedMember(member);
     setLoading(true);
     setStatus(t('获取电台地址...'));
     setLoadError('');
     // 秒开：上麦扫描已拿到的流地址直接开播，不重复请求
     if (opts.instantUrl) {
-      applyStreamUrl(opts.instantUrl, member, roomMode);
+      applyStreamUrl(opts.instantUrl, member, mode);
       scheduleStreamRefresh();
       setLoading(false);
       // 后台校验一次：拿到的若是新地址立即热换，避免扫描结果过期
       fetchingRef.current = true;
-      fetchRadioUrl(member, roomModeRef.current)
+      fetchRadioUrl(member, mode)
         .then((fresh) => {
           if (!playingRef.current) return;
           if (fresh) setRadioUrl((cur) => (cur && cur === fresh ? cur : fresh));
@@ -175,12 +177,12 @@ export default function RoomRadioScreen() {
     setRadioUrl('');
     setPlaying(false);
     try {
-      const url = await fetchRadioUrl(member, roomMode);
+      const url = await fetchRadioUrl(member, mode);
       if (url) {
-        applyStreamUrl(url, member, roomMode);
+        applyStreamUrl(url, member, mode);
         scheduleStreamRefresh();
       } else {
-        console.warn(`[radio] ${member.ownerName} ${roomMode} 未开启电台`);
+        console.warn(`[radio] ${member.ownerName} ${mode} 未开启电台`);
         setStatus(t('该房间当前没有开启语音电台'));
       }
     } catch (error: any) {
@@ -225,6 +227,11 @@ export default function RoomRadioScreen() {
     const off = onRadioStopRequested(() => stopRadio());
     return () => {
       off();
+      // R2: 卸载时清 5 分钟换流定时器（此前仅 stopRadio 清理 → 泄漏 + 卸载后仍 setRadioUrl）
+      if (refreshTimer.current) {
+        clearInterval(refreshTimer.current);
+        refreshTimer.current = null;
+      }
       stopRadioForeground();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,12 +248,12 @@ export default function RoomRadioScreen() {
             <Pill
               label={t('大房间')}
               selected={roomMode === 'big'}
-              onPress={() => { setRoomMode('big'); if (selectedMember) startRadio(selectedMember); }}
+              onPress={() => { setRoomMode('big'); if (selectedMember) startRadio(selectedMember, { mode: 'big' }); }}
             />
             <Pill
               label={t('小房间')}
               selected={roomMode === 'small'}
-              onPress={() => { setRoomMode('small'); if (selectedMember) startRadio(selectedMember); }}
+              onPress={() => { setRoomMode('small'); if (selectedMember) startRadio(selectedMember, { mode: 'small' }); }}
             />
             <View style={styles.modeDivider} />
             <Pill

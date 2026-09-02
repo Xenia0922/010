@@ -51,9 +51,14 @@ interface PlayerState {
   toggleDanmaku: () => void;
   /** 播放失败时切到下一候选线路；返回是否切换成功（无候选/已到末尾 → false） */
   nextCandidate: () => boolean;
+  /** 页面级 onClose 回调（PlayerScreen 挂载时注册；返回键/关闭时先调用它清理页面状态） */
+  onClose: (() => void) | null;
+  setOnClose: (fn: (() => void) | null) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
+  onClose: null,
+  setOnClose: (fn) => set({ onClose: fn }),
   source: null,
   meta: { title: '' },
   danmaku: { type: 'none' },

@@ -36,6 +36,18 @@ interface Props extends PlayerScreenProps {
  * />
  */
 export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false, onVideoSize, resumeAt, onRetry }: Props) {
+  // R4: 把页面 onClose 注册进 playerStore，硬件返回键经 FullscreenManager 调它（清理页面状态）
+  useEffect(() => {
+    if (!onClose) return;
+    const prev = usePlayerStore.getState().onClose;
+    usePlayerStore.getState().setOnClose(onClose);
+    return () => {
+      // 仅当自己仍是注册者时才清空（避免覆盖后续挂载的播放器）
+      if (usePlayerStore.getState().onClose === onClose) {
+        usePlayerStore.getState().setOnClose(prev);
+      }
+    };
+  }, [onClose]);
   const openedFor = useRef('');
   const sourceUrl = source.url || '';
   const fullscreen = usePlayerStore((s) => s.fullscreen);

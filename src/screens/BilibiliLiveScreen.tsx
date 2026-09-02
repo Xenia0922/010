@@ -180,6 +180,15 @@ export default function BilibiliLiveScreen() {
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
   useEffect(() => () => {
+    // R5: 卸载时断开弹幕 WS + 清全部定时器（此前仅 closePlayer 清理 → 泄漏/卸载后 setState）
+    try { danmakuRef.current?.disconnect(); } catch {}
+    danmakuRef.current = null;
+    if (dmFlushTimer.current) clearTimeout(dmFlushTimer.current);
+    if (qualityHintTimer.current) clearTimeout(qualityHintTimer.current);
+    if (hideControlsTimer.current) clearTimeout(hideControlsTimer.current);
+    dmFlushTimer.current = null;
+    qualityHintTimer.current = null;
+    hideControlsTimer.current = null;
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
 
@@ -192,15 +201,6 @@ export default function BilibiliLiveScreen() {
     });
     return () => sub.remove();
   }, []);
-
-  // 横屏/全屏解耦：全屏=沉浸+横屏；横屏切换=仅旋转。两者任一为真即锁定横屏。
-  useEffect(() => {
-    const wantLandscape = isFullscreen || isLandscape;
-    setLiveImmersiveMode(!!streamUrl && isFullscreen);
-    ScreenOrientation.lockAsync(
-      wantLandscape ? ScreenOrientation.OrientationLock.LANDSCAPE : ScreenOrientation.OrientationLock.PORTRAIT_UP,
-    ).catch(() => {});
-  }, [isFullscreen, isLandscape, streamUrl]);
 
   const closePlayer = () => {
     danmakuRef.current?.disconnect();
@@ -432,6 +432,7 @@ export default function BilibiliLiveScreen() {
           meta={{ title: streamTitle || t('B站直播') }}
           features={{ kernelSwitch: true, danmaku: true }}
           extraActions={[
+            { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleMiniPlayer },
             ...(qualities.length > 1
               ? qualities.map((q) => ({
                   key: `qn-${q.qn}`,
@@ -480,7 +481,7 @@ export default function BilibiliLiveScreen() {
         loading ? (
           <ActivityIndicator color={palette.tint} />
         ) : (
-          <HeaderAction label={t('刷新状态')} onPress={checkStatuses} />
+          <HeaderAction label={t('刷新状态')} onPress={() => checkStatuses(false)} />
         )
       } />
       {status ? <Text style={[styles.status, { color: palette.labelSecondary, backgroundColor: palette.surface, borderColor: palette.hairline }]}>{status}</Text> : null}

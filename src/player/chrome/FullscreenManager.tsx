@@ -31,7 +31,8 @@ export function FullscreenManager() {
     setPipPlaying(!!source?.url && state === 'playing' && !fullscreen);
   }, [source, state, fullscreen]);
 
-  // 返回键：先退全屏，再关闭播放器
+  // 返回键：先退全屏，再关闭播放器（R4：优先调页面 onClose 清理播放器页状态，
+  // 避免 VideoLibrary/Bilibili 等"黑屏需按两次返回"）
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       const s = usePlayerStore.getState();
@@ -40,7 +41,11 @@ export function FullscreenManager() {
         s.setFullscreen(false);
         return true;
       }
-      s.close();
+      if (s.onClose) {
+        s.onClose();
+      } else {
+        s.close();
+      }
       return true;
     });
     return () => sub.remove();

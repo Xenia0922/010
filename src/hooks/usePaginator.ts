@@ -48,13 +48,20 @@ export function usePaginator<T>(options: UsePaginatorOptions<T>) {
 
   const load = useCallback(
     async (reset: boolean) => {
-      // 重入保护：同步生效，避免 onEndReached 连发导致的重复请求
-      if (loadingRef.current) return;
+      if (reset) {
+        // R7: 切换 Tab/成员（reset）时抢占执行——在飞请求立即作废（runId 过期）并清空旧数据，
+        // 避免被 loadingRef 重入保护静默丢弃 → 新 Tab 长期显示旧数据
+        runIdRef.current++;
+      } else {
+        // 重入保护：仅翻页（loadMore）受控，同步生效，避免 onEndReached 连发重复请求
+        if (loadingRef.current) return;
+      }
       loadingRef.current = true;
       setLoading(true);
 
       const runId = ++runIdRef.current;
       const cursor = reset ? initialCursor : cursorRef.current;
+      if (reset) setItems([]);
 
       try {
         const res = await fetchPage(cursor);

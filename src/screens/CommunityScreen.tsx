@@ -238,9 +238,15 @@ export default function CommunityScreen() {
         busyRef={composeBusyRef}
         onClose={() => setComposeVisible(false)}
         onPosted={() => {
+          // R8: 发帖后切「最新」并刷新——若已在 newest 手动刷（effect 不触发）；
+          // 否则只 setMode，由 mode effect 触发 reset 刷新（避免 recommend 请求占住 loadingRef 后
+          // refresh() 被 usePaginator 重入保护静默丢弃 → 最新 tab 展示推荐数据）
           setComposeVisible(false);
-          setMode('newest');
-          refresh();
+          if (mode === 'newest') {
+            refresh();
+          } else {
+            setMode('newest');
+          }
         }}
       />
     </View>
