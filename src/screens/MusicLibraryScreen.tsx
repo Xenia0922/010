@@ -153,7 +153,8 @@ export default function MusicLibraryScreen() {
         durationSec: 0,
       };
       entry.count += 1;
-      entry.durationSec += Number(t.durationSec) || 0;
+      // 时长累加：R2(durationSec) + 官方(duration 秒) 统一
+      entry.durationSec += Number(t.durationSec) || Number(t.duration) || 0;
       if (!entry.cover) entry.cover = String(t.coverUrl || t.cover || '');
       map.set(key, entry);
     }
@@ -544,17 +545,27 @@ export default function MusicLibraryScreen() {
                       {/* 团体名优先（用户要求：R2 公演曲显示团体而非专辑），不加来源标记 */}
                       {joinMeta([item.groupLabel, item.artist, item.album]) || t('官方音乐')}
                     </Text>
-                    {item.ctime ? (
-                      <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
-                        {formatTimestamp(item.ctime).slice(0, 10)}
-                      </Text>
-                    ) : item.durationSec ? (
-                      <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
-                        {item.durationSec >= 3600
-                          ? `${Math.floor(item.durationSec / 3600)}:${String(Math.floor((item.durationSec % 3600) / 60)).padStart(2, '0')}:${String(item.durationSec % 60).padStart(2, '0')}`
-                          : `${Math.floor(item.durationSec / 60)}:${String(item.durationSec % 60).padStart(2, '0')}`}
-                      </Text>
-                    ) : null}
+                    {(() => {
+                      const dur = Number(item.durationSec) || Number(item.duration) || 0;
+                      if (dur > 0) {
+                        const h = Math.floor(dur / 3600);
+                        const m = Math.floor((dur % 3600) / 60);
+                        const sec = Math.floor(dur % 60);
+                        return (
+                          <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
+                            {h > 0
+                              ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+                              : `${m}:${String(sec).padStart(2, '0')}`}
+                          </Text>
+                        );
+                      }
+                      // 无时长兜底显示日期
+                      return item.ctime ? (
+                        <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
+                          {formatTimestamp(item.ctime).slice(0, 10)}
+                        </Text>
+                      ) : null;
+                    })()}
                   </View>
                 </View>
               </TouchableOpacity>
