@@ -3,6 +3,7 @@ package com.yk1z.yayamsg;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.util.Log;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -94,6 +95,7 @@ public class LiveExoView extends FrameLayout {
 
   /** JS 暂停/恢复（统一播放器控制条：播放/暂停直接控原生播放） */
   public void setPaused(boolean p) {
+    Log.i("YayaLive", "setPaused=" + p);
     paused = p;
     if (player != null) {
       try {
@@ -113,6 +115,7 @@ public class LiveExoView extends FrameLayout {
   }
 
   public void stop() {
+    Log.i("YayaLive", "stop url=" + url);
     released = true;
     handler.removeCallbacksAndMessages(null);
     // 延迟 ~150ms 释放：让解码/渲染线程把当前帧周期走完再销毁播放器。
@@ -129,6 +132,7 @@ public class LiveExoView extends FrameLayout {
       return;
     }
     setStatus("Connecting...");
+    Log.i("YayaLive", "start url=" + url + " audioOnly=" + audioOnly + " paused=" + paused);
     try {
       DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
           .setBufferDurationsMs(MIN_BUFFER_MS, MAX_BUFFER_MS, PLAYBACK_BUFFER_MS, REBUFFER_MS)
@@ -156,6 +160,7 @@ public class LiveExoView extends FrameLayout {
       player.addListener(new Player.Listener() {
         @Override
         public void onPlaybackStateChanged(int state) {
+          Log.i("YayaLive", "state=" + state + " url=" + url);
           if (state == Player.STATE_READY) {
             retryCount = 0;
             setStatus("Playing");
@@ -168,6 +173,7 @@ public class LiveExoView extends FrameLayout {
 
         @Override
         public void onPlayerError(PlaybackException error) {
+          Log.e("YayaLive", "error=" + error + " url=" + url);
           scheduleRetry("Playback failed");
         }
 

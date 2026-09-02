@@ -30,7 +30,7 @@ function persist() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(buffer)).catch(() => {});
-  }, 400);
+  }, 150);
 }
 
 function trim(arr: LogEntry[]): LogEntry[] {
