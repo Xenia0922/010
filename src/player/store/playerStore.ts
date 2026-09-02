@@ -65,6 +65,18 @@ interface PlayerState {
   setOnClose: (fn: (() => void) | null) => void;
 }
 
+/**
+ * rtmp/rtmps/.flv 是 Exo(LiveExoView) 专属流：即使页面漏传 needsNativeExo 也必须走 exo，
+ * 否则误进 RNV vod 内核 → 直播卡首帧 + 拖动进度条 seek 直播流 → 原生闪退。
+ */
+function kernelForSource(source: PlayerSource): 'exo' | 'native' {
+  const u = String((source && source.url) || '').toLowerCase();
+  if (source?.needsNativeExo) return 'exo';
+  if (u.startsWith('rtmp://') || u.startsWith('rtmps://')) return 'exo';
+  if (u.includes('.flv')) return 'exo';
+  return 'native';
+}
+
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   onClose: null,
   setOnClose: (fn) => set({ onClose: fn }),
@@ -102,7 +114,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         controlsVisible: true,
         fullscreen: false,
         useWebKernel: false,
-        activeKernel: source.needsNativeExo ? 'exo' : 'native',
+        activeKernel: kernelForSource(source),
         qualityQn: null,
         rate: 1,
         rotateDeg: 0,

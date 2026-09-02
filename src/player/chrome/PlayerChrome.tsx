@@ -132,7 +132,10 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   if (!source) return null;
 
   const playing = state === 'playing';
-  const isLive = source.kind === 'live';
+  // 直播判定 = kind 或流形态（rtmp/rtmps/.flv 铁定直播）：防止 kind 误标成 vod 时直播
+  // 出现可拖进度条（拖动 seek 直播流 → RNV 原生异常闪退）与错误的时间样式
+  const _u = String((source && source.url) || '').toLowerCase();
+  const isLive = source.kind === 'live' || _u.startsWith('rtmp://') || _u.startsWith('rtmps://') || _u.includes('.flv');
   // 卡片内嵌态（inline 且未全屏）：不叠任何控制坞，点击即进全屏
   const cardMode = inline && !fullscreen;
   const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;

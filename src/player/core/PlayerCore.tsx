@@ -35,6 +35,13 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   // seek 指令消费：UI 拖动进度条 → 当前内核 seek（native/exo 直调；web 经 postMessage）→ 清零
   useEffect(() => {
     if (seekTarget <= 0) return;
+    const su = String(source?.url || '').toLowerCase();
+    const liveShape = source?.kind === 'live' || su.startsWith('rtmp://') || su.startsWith('rtmps://') || su.includes('.flv');
+    if (liveShape) {
+      // 直播流 seek 无意义且可能原生崩溃（Exo 对直播 HLS/RTMP seek 抛异常）→ 丢弃指令
+      usePlayerStore.getState().setSeekTarget(0);
+      return;
+    }
     if (!useWebKernel && activeKernel === 'native' && nativeRef.current) {
       nativeRef.current.seek(seekTarget);
       usePlayerStore.getState().setSeekTarget(0);
