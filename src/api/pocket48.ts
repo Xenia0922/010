@@ -959,9 +959,15 @@ export const pocketApi = {
     return tryPocketPost([
       {
         url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
-        payload: { liveId: id },
+        payload: { liveId: id, streamProtocol: 'HLS' },
         tokenRequired: false,
-        label: 'open live one',
+        label: 'open live one hls',
+      },
+      {
+        url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
+        payload: { liveId: id, streamProtocol: 'FLV' },
+        tokenRequired: false,
+        label: 'open live one flv',
       },
       {
         url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
@@ -977,9 +983,15 @@ export const pocketApi = {
     return tryPocketPost([
       {
         url: `${BASE}/live/api/v1/live/getLiveOne`,
-        payload: { liveId: id },
+        payload: { liveId: id, streamProtocol: 'HLS' },
         tokenRequired: false,
-        label: 'live one',
+        label: 'live one hls',
+      },
+      {
+        url: `${BASE}/live/api/v1/live/getLiveOne`,
+        payload: { liveId: id, streamProtocol: 'FLV' },
+        tokenRequired: false,
+        label: 'live one flv',
       },
       {
         url: `${BASE}/live/api/v1/live/getLiveOne`,

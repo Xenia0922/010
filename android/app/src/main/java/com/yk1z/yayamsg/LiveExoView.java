@@ -50,10 +50,12 @@ public class LiveExoView extends FrameLayout {
   private boolean released = false;
   private boolean audioOnly = false;
   // ---- 拉流看门狗：RTMP/FLV 假死检测（出首帧后位置不再前进 / 卡缓冲超时 → 自动重连）----
-  private static final int WATCH_MS = 1500;        // 轮询周期
-  private static final int STALL_RESTART_MS = 6000; // READY 后无位置前进超时
-  private static final int BUFFER_STUCK_MS = 8000;  // 缓冲卡死超时
-  private static final int MAX_SILENT_RESTARTS = 3;
+  private static final int WATCH_MS = 1200;        // 轮询周期
+  private static final int STALL_RESTART_MS = 4000; // READY 后无位置前进超时（短=快速转交 JS 重解析）
+  private static final int BUFFER_STUCK_MS = 6000;  // 缓冲卡死超时
+  // 同 URL 重连通常无效（RTMP wsSecret 时效/单次连接）：只静默重连 1 次，
+  // 仍假死 → 上报 JS，由页面重新解析全新地址（新 wsSecret）再播
+  private static final int MAX_SILENT_RESTARTS = 1;
   private long watchPos = -1;
   private long lastProgressMark = 0;
   private int stallRestarts = 0;

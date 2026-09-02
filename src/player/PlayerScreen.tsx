@@ -39,6 +39,21 @@ interface Props extends PlayerScreenProps {
  * />
  */
 export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, features = {}, extraActions = [], onClose, children, persistent = false, inline = false, onVideoSize, resumeAt, onRetry }: Props) {
+  // 播放错误自动重解析（假死/URL 失效场景）：RTMP 流 URL 带 wsSecret 且多为单次有效，
+  // 原生重连同 URL 只会再拿一帧；有 onRetry（页面重新解析新地址）时自动触发，同源最多 2 次。
+  const dbgState = usePlayerStore((s) => s.state);
+  const autoRetryLeft = useRef(2);
+  useEffect(() => {
+    autoRetryLeft.current = 2; // 换源（新 url）重置自动重试额度
+  }, [source.url]);
+  useEffect(() => {
+    if (dbgState !== 'error' || !onRetry) return;
+    if (autoRetryLeft.current <= 0) return;
+    autoRetryLeft.current -= 1;
+    try { logInfo(`[player] error → auto re-resolve (fresh url), left=${autoRetryLeft.current}`, 'player.screen'); } catch {}
+    const t = setTimeout(() => { try { onRetry(); } catch {} }, 900);
+    return () => clearTimeout(t);
+  }, [dbgState, onRetry]);
   // R4: 把页面 onClose 注册进 playerStore，硬件返回键经 FullscreenManager 调它（清理页面状态）
   useEffect(() => {
     if (!onClose) return;
