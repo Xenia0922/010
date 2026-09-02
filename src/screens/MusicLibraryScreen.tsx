@@ -122,14 +122,14 @@ export default function MusicLibraryScreen() {
 
   // 收藏计数：与 FAV 列表（isFavorite 过滤）一致，避免显示旧 id 键造成的虚高
   const favCount = useMemo(
-    () => songs.filter((t) => useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''))).length,
+    () => songs.filter((t) => useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''), t)).length,
     [songs, favorites],
   );
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
     if (albumFilter) list = list.filter(item => String(item.groupLabel || '') === albumFilter.groupLabel && String(item.album || '') === albumFilter.album);
-    else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')));
+    else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
     else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
@@ -525,13 +525,13 @@ export default function MusicLibraryScreen() {
                     onPress={(e) => {
                       e.stopPropagation();
                       const fid = String(item.musicId || item.id || '');
-                      if (fid) toggleFavorite(fid);
+                      if (fid) toggleFavorite(fid, item);
                     }}
                   >
                     <MaterialCommunityIcons
-                      name={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')) ? 'heart' : 'heart-outline'}
+                      name={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item) ? 'heart' : 'heart-outline'}
                       size={20}
-                      color={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || '')) ? palette.danger : palette.onTint}
+                      color={useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item) ? palette.danger : palette.onTint}
                     />
                   </ScalePressable>
                 </View>

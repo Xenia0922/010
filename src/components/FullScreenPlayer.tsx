@@ -46,7 +46,7 @@ interface FullScreenPlayerInnerProps {
   playMode: string;
   lyrics: any[];
   favorites: string[];
-  toggleFavorite: (id: string) => void;
+  toggleFavorite: (id: string, track?: any) => void;
   currentIndex: number;
   queue: any[];
   onClose: () => void;
@@ -72,7 +72,7 @@ function FullScreenPlayerInner({
   const screenWidthRef = useRef(screenWidth);
   screenWidthRef.current = screenWidth;
   const trackFavId = track ? String(track.musicId || track.id || '') : '';
-  const isFav = trackFavId ? favorites.includes(trackFavId) : false;
+  const isFav = trackFavId ? useMusicPlayerStore.getState().isFavorite(trackFavId, track) : false;
   const rawCover = (track?.coverUrl || track?.cover || track?.thumbPath || '') as string;
   const coverUri = rawCover ? (rawCover.startsWith('http') ? rawCover : `https://source.48.cn${rawCover.startsWith('/') ? rawCover : '/' + rawCover}`) : '';
 
@@ -258,7 +258,7 @@ function FullScreenPlayerInner({
           </View>
           <View style={styles.btnRow}>
             <Pressable
-              onPress={() => { if (trackFavId) toggleFavorite(trackFavId); }}
+              onPress={() => { if (trackFavId) toggleFavorite(trackFavId, track); }}
               style={({ pressed }) => [styles.sideBtn, isFav && { backgroundColor: palette.tintSoft }, pressed && { opacity: 0.6 }]}
             >
               <Icon name={isFav ? 'heart' : 'heart-outline'} size={22} color={isFav ? palette.danger : iconSecondary} />

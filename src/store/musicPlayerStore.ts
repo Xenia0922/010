@@ -119,8 +119,8 @@ interface MusicPlayerState {
   setLyrics: (lines: LyricLine[]) => void;
   setError: (e: string | null) => void;
   setSeekTarget: (t: number) => void;
-  isFavorite: (id: string) => boolean;
-  toggleFavorite: (id: string) => void;
+  isFavorite: (id: string, track?: any) => boolean;
+  toggleFavorite: (id: string, track?: any) => void;
   next: () => Track | null;
   prev: () => Track | null;
 }
@@ -218,10 +218,11 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
        * B7 收藏键归一：收藏统一存 `title|artist` 键（旧数据仍为 musicId，双兼容）——
        * 官方曲（数字 musicId）与 R2 曲（R2- 前缀）同一首歌共享同一收藏，换源不再"丢收藏"。
        */
-      isFavorite: (id) => {
+      isFavorite: (id, track) => {
         const f = get().favorites;
         if (f.includes(id)) return true; // 旧 musicId 键兼容
-        const t = get().queue.find((x) => String(x.musicId || x.id) === String(id));
+        // 传入 track 优先（列表/播放器持有 item——queue 空时列表收藏判断曾全失）
+        const t = track || get().queue.find((x) => String(x.musicId || x.id) === String(id));
         if (t) {
           // 键 = title|artist|album（album 区分同名不同版本/不同公演——修复「收藏一首导致同名一起收藏」）；
           // 兼容 B7 早期 title|artist 键数据
@@ -233,9 +234,9 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
         return false;
       },
 
-      toggleFavorite: (id) => set((s) => {
+      toggleFavorite: (id, track) => set((s) => {
         if (!id) return s;
-        const t = s.queue.find((x) => String(x.musicId || x.id) === String(id));
+        const t = track || s.queue.find((x) => String(x.musicId || x.id) === String(id));
         let keys: string[] = [];
         if (t) {
           const k3 = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`.trim();

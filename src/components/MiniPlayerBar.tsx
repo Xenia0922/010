@@ -134,11 +134,8 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
       onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 8,
       onPanResponderMove: (_, gs) => { if (Math.abs(gs.dy) > 8) translateY.setValue(gs.dy); },
       onPanResponderRelease: (_, gs) => {
-        if (gs.dy > 60) {
-          Animated.timing(translateY, { toValue: 220, duration: motion.duration.fast, easing: Easing.inOut(Easing.ease), useNativeDriver: true }).start();
-        } else {
-          Animated.spring(translateY, { toValue: 0, ...motion.spring.bouncy, useNativeDriver: true }).start();
-        }
+        // 仅回弹复位：去掉「下滑隐藏」（隐藏后无恢复入口 = 半成品手势）
+        Animated.spring(translateY, { toValue: 0, ...motion.spring.bouncy, useNativeDriver: true }).start();
       },
     })
   ).current;

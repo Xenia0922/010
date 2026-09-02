@@ -123,7 +123,7 @@ export const MusicEngine = {
     useMusicPlayerStore.setState({
       currentIndex: idx >= 0 ? idx : 0,
       playbackState: 'paused',
-      url: '',
+      url: useMusicPlayerStore.getState().url, // 保留旧 url（B2 同模式防空源翻转）
       duration: 0,
       position: 0,
       lyrics: [],
@@ -318,8 +318,7 @@ export const MusicEngine = {
       const coreGroupCandidates: string[] = [];
       for (const g of candidates) {
         if (!g) continue;
-        coreGroupCandidates.push(g);
-        coreGroupCandidates.push(`${coreTitle}`.length ? g : g); // 保持 group 不变，仅标题换核心版
+        coreGroupCandidates.push(g); // 保持 group 不变，仅标题换核心版
       }
       try {
         const { matcher } = await getLyricsMatcher();
