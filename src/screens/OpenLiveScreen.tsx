@@ -275,7 +275,7 @@ export default function OpenLiveScreen() {
           onClose={() => setPlaying(null)}
           persistent
         >
-          <TouchableOpacity activeOpacity={0.7} style={[styles.externalBtn, { backgroundColor: palette.tint }]} onPress={() => Linking.openURL(playing.url)}>
+          <TouchableOpacity activeOpacity={0.7} style={[styles.externalBtn, { backgroundColor: palette.tint }]} onPress={() => Linking.openURL(String(playing.url || '')).catch(() => {})}>
             <Text style={[styles.externalText, { color: palette.onTint }]}>{t('外部打开')}</Text>
           </TouchableOpacity>
         </PlayerScreen>

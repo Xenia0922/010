@@ -207,7 +207,8 @@ export default function FlipScreen() {
       const res = await pocketApi.getFlipList((nextPage - 1) * 100, 100);
       const list = normalizeFlipList(res);
       setFlips((prev) => (replace ? list : [...prev, ...list]));
-      setHasMore(list.length >= 100);
+      // G5: offset 分页恰好 100 条时下一页为空——空页即终止（否则 onEnd 无限空拉）
+      setHasMore(list.length >= 100 && list.length > 0);
       if (list.length === 0 && replace) {
         setStatus('');
       } else if (replace) {
