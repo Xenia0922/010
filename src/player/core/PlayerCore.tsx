@@ -54,12 +54,9 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
     [state, setPosition],
   );
 
-  if (!source || !source.url) return null;
-
-  const paused = state !== 'playing';
-  const kernel = useWebKernel ? 'web' : activeKernel;
-
   // 原生 → 网页兜底（内核互切）
+  // ⚠️ 全部 hooks 必须在条件 return 之前（source null 时提前返回会导致
+  // hooks 数量变化 → "Rendered more hooks than during the previous render" 崩溃）
   const switchToWeb = useCallback(() => {
     setUseWebKernel(true);
     setError('');
@@ -77,6 +74,11 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
     },
     [setError, setState],
   );
+
+  if (!source || !source.url) return null;
+
+  const paused = state !== 'playing';
+  const kernel = useWebKernel ? 'web' : activeKernel;
 
   if (kernel === 'web') {
     return (

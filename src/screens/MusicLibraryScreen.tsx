@@ -182,18 +182,21 @@ export default function MusicLibraryScreen() {
         const err = (officialRes as PromiseRejectedResult).reason || (r2Res as PromiseRejectedResult).reason;
         throw err instanceof Error ? err : new Error('音乐列表加载失败');
       }
-      // 官方源优先：title+artist+album 同键时保留官方曲目，R2 仅补充官方缺失的。
-      // B6：去重键加 album —— 同一首歌的不同专辑/公演版本（官方版 vs R2 公演版）不再被吞
+      // 去重键 title|artist|album（同曲不同专辑/公演版本各自保留）；
+      // 同名同专辑合并时 **R2 优先**（用户要求：R2 字段完整/时长准；官方同曲只作 R2 缺失时的补充）
       const seen = new Set<string>();
       const merged: any[] = [];
-      official.forEach((t: any) => {
-        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
+      const dedupKey = (t: any) =>
+        `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
+      r2.forEach((t: any) => {
+        const key = dedupKey(t);
+        if (seen.has(key)) return;
         seen.add(key);
         merged.push(t);
       });
-      r2.forEach((t: any) => {
-        const key = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
-        if (seen.has(key)) return;
+      official.forEach((t: any) => {
+        const key = dedupKey(t);
+        if (seen.has(key)) return; // R2 已有同曲 → 跳过官方版
         seen.add(key);
         merged.push(t);
       });
