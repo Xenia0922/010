@@ -1186,6 +1186,8 @@ export default function MediaScreen() {
     setAnnouncement('');
     setAnnounceVisible(false);
     setAnnounceExpanded(false);
+    // fromRoom 直达（房间点开）：关闭播放器 = 返回房间
+    if (route.params?.fromRoom) navigation.goBack();
   };
 
   // 应用内小窗：当前播放交棒给悬浮小窗（小窗独立 Video 实例续播），关掉大播放器
@@ -1219,12 +1221,10 @@ export default function MediaScreen() {
   // v2.6: came from room (explicit fromRoom flag) → hide list, back goes to room
   // 注意：不能仅凭 playLiveId 判断——首页直播卡跳转也带 playLiveId，
   // 无 fromRoom 标记时保持列表页（不误切 Rooms tab）
+  // fromRoom 直达：不再"首帧未播放即弹回房间"——此前 playing 初始为 null（解析中）时
+  // useEffect 立即 navigate('Rooms')，导致房间点录播/直播「第一次必进不去播放器」。
+  // 播放失败由播放器错误态 + 重试呈现；关闭时 closePlayer 负责 goBack 回房间。
   const fromRoom = !!route.params?.fromRoom;
-  useEffect(() => {
-    if (fromRoom && !playing) {
-      navigation.navigate('Rooms' as any);
-    }
-  }, [fromRoom, playing]);
 
   const refreshAnnouncement = async () => {
     if (!playing || !playing.isLive) return;
@@ -1556,7 +1556,7 @@ export default function MediaScreen() {
               { key: 'danmaku', icon: 'cog', label: t('弹幕设置'), onPress: () => setShowDanmakuSettings(true) },
               { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleMiniPlayer },
             ]}
-            onClose={() => { setPipPlaying(false); setPlaying(null); }}
+            onClose={() => { setPipPlaying(false); closePlayer(); }}
             // 直播流地址有时效（wsSecret）：失败重试 = 重新解析（startPlay），而非重播同 URL
             onRetry={() => startPlay(playing.item)}
             persistent
