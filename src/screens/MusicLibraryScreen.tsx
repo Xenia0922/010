@@ -517,8 +517,8 @@ export default function MusicLibraryScreen() {
                   <Text style={[styles.songTitle, { color: palette.label }]} numberOfLines={2}>{item.title || t('无标题')}</Text>
                   <View style={styles.songMetaLine}>
                     <Text style={[styles.songArtist, { color: palette.labelSecondary }]} numberOfLines={1}>
-                      {/* 团体名优先（用户要求：R2 公演曲显示团体而非专辑）；公演标记仅 R2 曲 */}
-                      {item.source === 'r2-performance' ? `${t('公演')} · ` : ''}{joinMeta([item.groupLabel, item.artist, item.album]) || t('官方音乐')}
+                      {/* 团体名优先（用户要求：R2 公演曲显示团体而非专辑），不加来源标记 */}
+                      {joinMeta([item.groupLabel, item.artist, item.album]) || t('官方音乐')}
                     </Text>
                     {item.ctime ? (
                       <Text style={[styles.dateText, { color: palette.labelTertiary }]}>
@@ -545,6 +545,8 @@ export default function MusicLibraryScreen() {
         source={{ uri: playUrl || '', headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' } }}
         style={styles.tinyPlayer}
         paused={playbackState !== 'playing'}
+        // 单曲循环用原生 repeat（无缝、无 seek(0) 重新缓冲的卡顿）；onEnd 仅处理顺序/随机切歌
+        repeat={playMode === 'single'}
         ignoreSilentSwitch="ignore" playInBackground playWhenInactive
         onAudioBecomingNoisy={() => {
           // 拔耳机/蓝牙断开：暂停播放，避免外放打扰
@@ -580,25 +582,8 @@ export default function MusicLibraryScreen() {
         }}
         onEnd={() => {
           try {
-            if (playMode === 'single') {
-              useMusicPlayerStore.getState().setPosition(0);
-              useMusicPlayerStore.getState().setPlaybackState('playing');
-              // 单曲循环必须显式 seek(0)：ended 后仅翻转 paused 不会重播
-              // （seekTarget effect 要求 >0，seek(0) 走不到，这里直接调用）
-              if (videoRef.current && typeof videoRef.current.seek === 'function') {
-                try { videoRef.current.seek(0); } catch (err) { console.warn('[MusicLibraryScreen] loop seek error:', err); }
-              }
-              // B4 兜底：部分 ROM ended 态 seek(0) 后不自动恢复播放 → 800ms 后仍停在起点则暂停/恢复翻转一次
-              setTimeout(() => {
-                const st = useMusicPlayerStore.getState();
-                if (st.playbackState === 'playing' && st.position <= 0.5) {
-                  st.setPlaybackState('paused');
-                  setTimeout(() => st.setPlaybackState('playing'), 60);
-                }
-              }, 800);
-            } else {
-              MusicEngine.next();
-            }
+            // 单曲模式由 repeat 无缝循环（不触发 onEnd）；其余模式自动切下一首
+            if (playMode !== 'single') MusicEngine.next();
           } catch (err) {
             console.warn('[MusicLibraryScreen] onEnd error:', err);
           }
@@ -636,7 +621,7 @@ const styles = StyleSheet.create({
   albumBarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6 },
   playAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6 },
   playAllText: { fontSize: 12, fontWeight: '700' },
-  albumItem: { width: '48.5%', marginBottom: 12 },
+  albumItem: { flex: 1, marginBottom: 12, marginHorizontal: 5 },
   albumCover: { width: '100%', aspectRatio: 1, borderRadius: 14, overflow: 'hidden' },
   albumCountPill: { position: 'absolute', right: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
   albumCountText: { color: '#fff', fontSize: 11, fontWeight: '700' },

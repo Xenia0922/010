@@ -189,7 +189,7 @@ function FullScreenPlayerInner({
           <View style={styles.topCenter}>
             <Text style={[typography.headline, { color: palette.label }]} numberOfLines={1}>{track.title || t('未知')}</Text>
             <Text style={[typography.caption1, { color: palette.labelTertiary, marginTop: 2 }]} numberOfLines={1}>
-              {joinMeta([track.joinMemberNames, track.subTitle, track.albumName]) || t('官方音乐')}
+              {joinMeta([track.groupLabel, track.artist, track.album]) || t('官方音乐')}
             </Text>
           </View>
           <View style={styles.topBtn} />
@@ -231,7 +231,7 @@ function FullScreenPlayerInner({
         ) : (
           <View style={styles.discWrap}>
             <Animated.View style={[styles.disc, { transform: [{ rotate: spin }] }]}>
-              <CoverArt uri={coverUri || undefined} title={track.title || '♪'} size={240} round />
+              <CoverArt key={coverUri || track.title || '♪'} uri={coverUri || undefined} title={track.title || '♪'} size={240} round />
             </Animated.View>
           </View>
         )}

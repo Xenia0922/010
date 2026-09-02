@@ -211,7 +211,7 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
 
       <Pressable onPress={onOpenFullScreen} style={styles.row}>
         <Animated.View style={[styles.cover, { transform: [{ rotate: spin }] }]}>
-          <CoverArt uri={coverUri || undefined} title={track.title || '♪'} size={48} round />
+          <CoverArt key={coverUri || track.title || '♪'} uri={coverUri || undefined} title={track.title || '♪'} size={48} round />
         </Animated.View>
         <View style={styles.info}>
           <Text
@@ -224,7 +224,7 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
             numberOfLines={1}
             style={[typography.caption1, { color: palette.labelTertiary, lineHeight: 14, marginTop: 2 }]}
           >
-            {joinMeta([track.joinMemberNames, track.subTitle, track.albumName]) || t('官方音乐')}
+            {joinMeta([track.groupLabel, track.artist, track.album]) || t('官方音乐')}
           </Text>
         </View>
         <View style={styles.actions}>
