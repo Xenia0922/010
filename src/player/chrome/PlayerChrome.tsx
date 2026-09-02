@@ -253,16 +253,24 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
-      {/* 暂停/停止态：中央大播放钮（卡片态暂停也给钮：点 = 进全屏续播） */}
+      {/* 暂停/停止态：中央播放钮。音频源（语音卡）原地播放；视频卡片点击进全屏续播；页面播放器原地续播 */}
       {!error && !isLive && state !== 'playing' && state !== 'loading' ? (
         <Pressable
           style={styles.centerPlayWrap}
           onPress={() => {
-            if (cardMode) usePlayerStore.getState().setFullscreen(true);
-            else togglePlay();
+            if (cardMode && source.kind !== 'audio' && !source.audioOnly) {
+              usePlayerStore.getState().setFullscreen(true);
+            } else {
+              togglePlay();
+            }
           }}
         >
-          <View style={styles.centerPlayBtn}>
+          <View
+            style={[
+              styles.centerPlayBtn,
+              source.kind === 'audio' || source.audioOnly ? styles.centerPlayBtnSm : null,
+            ]}
+          >
             <MaterialCommunityIcons name="play" size={26} color="#16181c" style={{ marginLeft: 4 }} />
           </View>
         </Pressable>
@@ -508,6 +516,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
     elevation: 6,
   },
+  centerPlayBtnSm: { width: 36, height: 36, borderRadius: 18, elevation: 0 },
   seekFlashWrap: {
     position: 'absolute', left: 0, right: 0, top: '38%', zIndex: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
