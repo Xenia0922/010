@@ -6,12 +6,11 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
-import android.support.v4.media.session.MediaSessionCompat;
-import android.support.v4.media.session.PlaybackStateCompat;
 
 import androidx.annotation.Nullable;
 
@@ -27,7 +26,7 @@ public class RadioForegroundService extends Service {
   private static final int NOTIFICATION_ID = 2024;
 
   private PowerManager.WakeLock wakeLock;
-  private MediaSessionCompat mediaSession;
+  private MediaSession mediaSession;
   private String title = "";
   private boolean isPlaying = false;
   private long position = 0;
@@ -41,8 +40,8 @@ public class RadioForegroundService extends Service {
       wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "yaya:radio");
       wakeLock.setReferenceCounted(false);
     }
-    mediaSession = new MediaSessionCompat(this, "yaya-media");
-    mediaSession.setCallback(new MediaSessionCompat.Callback() {
+    mediaSession = new MediaSession(this, "yaya-media");
+    mediaSession.setCallback(new MediaSession.Callback() {
       @Override
       public void onPlay() {
         RadioServiceModule.emitControl(getApplicationContext(), "play_pause");
@@ -103,14 +102,16 @@ public class RadioForegroundService extends Service {
     PendingIntent stopPi = mediaPi(RadioMediaReceiver.ACTION_STOP, 13);
 
     // MediaSession 播放状态：供锁屏展示进度/可拖拽（duration>0 时允许 seek）
-    PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
-        .setActions(PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE
-            | PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-            | (duration > 0 ? PlaybackStateCompat.ACTION_SEEK_TO : 0));
-    stateBuilder.setState(
-        isPlaying ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED,
-        position, 1.0f);
-    mediaSession.setPlaybackState(stateBuilder.build());
+    long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+        | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+        | (duration > 0 ? PlaybackState.ACTION_SEEK_TO : 0);
+    PlaybackState playbackState = new PlaybackState.Builder()
+        .setActions(actions)
+        .setState(
+            isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+            position, 1.0f, System.currentTimeMillis())
+        .build();
+    mediaSession.setPlaybackState(playbackState);
     mediaSession.setActive(true);
 
     Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -123,7 +124,6 @@ public class RadioForegroundService extends Service {
         .setOnlyAlertOnce(true)
         .setContentIntent(contentPi)
         .setDeleteIntent(stopPi)
-        .setMediaSession(mediaSession.getSessionToken())
         .addAction(android.R.drawable.ic_media_previous, "上一首", prevPi)
         .addAction(isPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play, isPlaying ? "暂停" : "播放", playPausePi)
         .addAction(android.R.drawable.ic_media_next, "下一首", nextPi)
