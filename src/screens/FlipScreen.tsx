@@ -569,7 +569,7 @@ export default function FlipScreen() {
                           headers: buildPocketHeaders(),
                         }}
                         meta={{ title: t('翻牌答案') }}
-                        features={{ kernelSwitch: true }}
+                        features={{ kernelSwitch: true, rate: true }}
                         persistent
                       />
                     </View>

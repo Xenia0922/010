@@ -724,7 +724,7 @@ export default function AnalysisScreen() {
                             inline
                             source={{ kind: isVoice ? 'audio' : 'vod', url: answerUrl, headers: buildPocketHeaders() }}
                             meta={{ title: t('翻牌答案') }}
-                            features={{ kernelSwitch: true }}
+                            features={{ kernelSwitch: true, rate: true }}
                             persistent
                           />
                         ) : null}
@@ -763,7 +763,7 @@ export default function AnalysisScreen() {
             <PlayerScreen
               source={{ kind: 'vod', url: playMedia.url, headers: buildPocketHeaders() }}
               meta={{ title: t('视频') }}
-              features={{ kernelSwitch: true }}
+              features={{ kernelSwitch: true, rate: true }}
               onClose={() => setPlayMedia(null)}
               persistent
             />

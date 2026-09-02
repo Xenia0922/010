@@ -171,7 +171,7 @@ export default function AudioProgramsScreen() {
               inline
               source={{ kind: 'audio', url: playUrls[urlIndex], headers: buildPocketHeaders() }}
               meta={{ title: playing?.title || t('正在播放') }}
-              features={{ kernelSwitch: true }}
+              features={{ kernelSwitch: true, rate: true }}
               persistent
             >
               {playUrls.length > 1 ? (

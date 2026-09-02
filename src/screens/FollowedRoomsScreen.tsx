@@ -2019,7 +2019,7 @@ export default function FollowedRoomsScreen() {
                 headers: { 'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)', Referer: 'https://h5.48.cn/' },
               }}
               meta={{ title: roomPlayer.title, cover: roomPlayer.cover }}
-              features={{ kernelSwitch: true }}
+              features={{ kernelSwitch: true, rate: !roomPlayer.isLive }}
               extraActions={[
                 { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleRoomMiniPlayer },
                 { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: openRoomRankPanel },

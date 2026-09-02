@@ -271,7 +271,7 @@ export default function OpenLiveScreen() {
         <PlayerScreen
           source={{ kind: 'vod', url: playing.url, headers: buildPocketHeaders() }}
           meta={{ title: playing.title }}
-          features={{ kernelSwitch: true }}
+          features={{ kernelSwitch: true, rate: true }}
           onClose={() => setPlaying(null)}
           persistent
         >

@@ -144,7 +144,7 @@ export default function VideoLibraryScreen() {
         <PlayerScreen
           source={{ kind: 'vod', url: playUrl, headers: buildPocketHeaders() }}
           meta={{ title: playing?.title || t('视频') }}
-          features={{ kernelSwitch: true }}
+          features={{ kernelSwitch: true, rate: true }}
           onClose={() => setPlayUrl('')}
           persistent
         />
