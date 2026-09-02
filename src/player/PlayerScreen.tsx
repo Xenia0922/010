@@ -73,6 +73,20 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceUrl]);
 
+  // 跨页播放互斥：全局播放器同一时刻只播一路。本播放器打开的源被其它页面
+  // 的新播放器顶替（store.url ≠ 本组件声明的源）→ 本页自动退出播放器
+  //（如 Media tab 后台直播被房间点播顶掉，Media 页自动停止播放态）。
+  const storeUrl = usePlayerStore((s) => s.source?.url);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!sourceUrl || !storeUrl) return;
+    if (openedFor.current === sourceUrl && storeUrl !== sourceUrl && onCloseRef.current) {
+      openedFor.current = '';
+      onCloseRef.current();
+    }
+  }, [storeUrl, sourceUrl]);
+
   const content = (
     <View style={[styles.container, inline && !fullscreen ? styles.inline : null]}>
       {/* 画面层：旋转/镜像 transform 仅作用于视频（弹幕/控制层不转） */}
