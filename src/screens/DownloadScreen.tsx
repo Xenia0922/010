@@ -89,6 +89,15 @@ export default function DownloadScreen() {
     refresh();
   }, [refresh]));
 
+  // G2: 下载进度节流——每块进度都全表刷新太频（进度回调密集时列表持续重建）
+  const lastRefreshRef = useRef(0);
+  const throttledRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRefreshRef.current < 400) return;
+    lastRefreshRef.current = now;
+    refresh();
+  }, [refresh]);
+
   const startManualDownload = async () => {
     const target = url.trim();
     if (!target || busy) return;
@@ -100,7 +109,7 @@ export default function DownloadScreen() {
           : /\.(mp3|m4a|aac|amr|wav)(\?|$)/i.test(target) ? 'audio'
           : /\.(mp4|m3u8|flv|mov)(\?|$)/i.test(target) ? 'video'
           : 'file',
-        onProgress: refresh,
+        onProgress: throttledRefresh,
       });
       setUrl('');
       showToast(t('下载完成'));
@@ -118,7 +127,7 @@ export default function DownloadScreen() {
         url: task.url,
         type: task.type,
         name: task.name,
-        onProgress: refresh,
+        onProgress: throttledRefresh,
       });
       // 删除原失败记录，避免同 URL 双任务
       try { await deleteDownloadItem(task.id); } catch { /* ignore */ }
