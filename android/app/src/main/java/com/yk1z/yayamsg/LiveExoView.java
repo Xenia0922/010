@@ -7,6 +7,7 @@ import android.util.Log;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.TextureView;
 import android.view.View;
@@ -29,10 +30,10 @@ import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.video.VideoSize;
 
 public class LiveExoView extends FrameLayout {
-  private static final int MIN_BUFFER_MS = 6000;
+  private static final int MIN_BUFFER_MS = 2000;
   private static final int MAX_BUFFER_MS = 20000;
-  private static final int PLAYBACK_BUFFER_MS = 1500;
-  private static final int REBUFFER_MS = 3000;
+  private static final int PLAYBACK_BUFFER_MS = 1200;
+  private static final int REBUFFER_MS = 2000;
   private static final int MAX_RETRY = 5;
   private static final long RETRY_DELAY_MS = 1600L;
 
@@ -48,6 +49,15 @@ public class LiveExoView extends FrameLayout {
   private float videoPixelRatio = 1f;
   private boolean released = false;
   private boolean audioOnly = false;
+  // ---- 拉流看门狗：RTMP/FLV 假死检测（出首帧后位置不再前进 / 卡缓冲超时 → 自动重连）----
+  private static final int WATCH_MS = 1500;        // 轮询周期
+  private static final int STALL_RESTART_MS = 6000; // READY 后无位置前进超时
+  private static final int BUFFER_STUCK_MS = 8000;  // 缓冲卡死超时
+  private static final int MAX_SILENT_RESTARTS = 3;
+  private long watchPos = -1;
+  private long lastProgressMark = 0;
+  private int stallRestarts = 0;
+  private boolean watchArmed = false;
   private final com.facebook.react.uimanager.ThemedReactContext reactContext;
 
   public LiveExoView(Context context) {
@@ -97,6 +107,8 @@ public class LiveExoView extends FrameLayout {
   public void setPaused(boolean p) {
     Log.i("YayaLive", "setPaused=" + p);
     paused = p;
+    watchPos = -1;
+    lastProgressMark = 0;
     if (player != null) {
       try {
         player.setPlayWhenReady(!p);
@@ -164,6 +176,10 @@ public class LiveExoView extends FrameLayout {
           if (state == Player.STATE_READY) {
             retryCount = 0;
             setStatus("Playing");
+            // 首帧后启动拉流看门狗（假死自动重连）
+            watchPos = -1;
+            lastProgressMark = SystemClock.elapsedRealtime();
+            scheduleWatch();
           } else if (state == Player.STATE_BUFFERING) {
             setStatus("Buffering...");
           } else if (state == Player.STATE_ENDED) {
@@ -213,6 +229,58 @@ public class LiveExoView extends FrameLayout {
     retryCount += 1;
     setStatus(reason + ", retrying " + retryCount + "/" + MAX_RETRY);
     handler.postDelayed(this::start, RETRY_DELAY_MS);
+  }
+
+  /** 拉流看门狗单拍：READY 后位置无进展/卡缓冲 → 自动重连（假死自愈，无需用户多点） */
+  private void watchTick() {
+    if (released || handler == null) return;
+    if (player == null || !player.getPlayWhenReady()) {
+      watchPos = -1;
+      lastProgressMark = 0;
+      scheduleWatch();
+      return;
+    }
+    int st = player.getPlaybackState();
+    long now = SystemClock.elapsedRealtime();
+    if (st == Player.STATE_READY) {
+      long pos = player.getCurrentPosition();
+      if (pos != watchPos) {
+        watchPos = pos;
+        lastProgressMark = now;
+        stallRestarts = 0; // 有推进：复位静默重连计数
+      } else if (lastProgressMark > 0 && now - lastProgressMark >= STALL_RESTART_MS) {
+        Log.w("YayaLive", "stall: no position advance " + STALL_RESTART_MS + "ms, auto-restart url=" + url);
+        silentRestart("stalled");
+        return;
+      }
+      if (watchPos < 0) watchPos = pos;
+    } else if (st == Player.STATE_BUFFERING) {
+      if (lastProgressMark == 0) lastProgressMark = now;
+      if (now - lastProgressMark >= BUFFER_STUCK_MS) {
+        Log.w("YayaLive", "stall: buffering stuck " + BUFFER_STUCK_MS + "ms, auto-restart url=" + url);
+        silentRestart("buffer-stuck");
+        return;
+      }
+    }
+    scheduleWatch();
+  }
+
+  private void scheduleWatch() {
+    if (!released && handler != null) handler.postDelayed(this::watchTick, WATCH_MS);
+  }
+
+  /** 假死静默重连：最多 MAX_SILENT_RESTARTS 次，仍失败才报 JS（由用户重试/切换网页） */
+  private void silentRestart(String why) {
+    if (stallRestarts >= MAX_SILENT_RESTARTS) {
+      Log.e("YayaLive", "auto-restart exhausted (" + why + "), notify JS url=" + url);
+      emitErrorToJs("直播画面无响应（" + why + "），请重试");
+      return;
+    }
+    stallRestarts += 1;
+    watchPos = -1;
+    lastProgressMark = 0;
+    handler.removeCallbacksAndMessages(null); // 取消排程（start() 内也会清）
+    start();
   }
 
   /** 重试耗尽后把失败原因发给 JS（LiveExoViewManager 注册的 onError） */
