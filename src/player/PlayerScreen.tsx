@@ -7,6 +7,7 @@ import { PlayerChrome } from './chrome/PlayerChrome';
 import { FullscreenManager } from './chrome/FullscreenManager';
 import { PlayerScreenProps } from './types';
 import { logInfo } from '../utils/runtimeLog';
+import { Text, Platform } from 'react-native';
 
 interface Props extends PlayerScreenProps {
   /** 弹幕 overlay 等附加层插槽（由页面挂 DanmakuOverlay） */
@@ -95,8 +96,24 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
     }
   }, [storeUrl, sourceUrl]);
 
+  const _dbgSrc = usePlayerStore.getState().source;
+  const _dbgState = usePlayerStore.getState().state;
+  const _dbgActive = usePlayerStore.getState().activeKernel;
+  const _dbgUrl = String((_dbgSrc && _dbgSrc.url) || '').toLowerCase();
+  const _dbgIsLive = !!_dbgSrc && (String(((_dbgSrc.kind as any) || '')) === 'live' || _dbgUrl.startsWith('rtmp://') || _dbgUrl.startsWith('rtmps://') || _dbgUrl.includes('.flv'));
+  const _dbgShort = _dbgUrl.length > 56 ? (_dbgUrl.slice(0, 56) + '…') : _dbgUrl;
+  const debugBar = (
+    <View pointerEvents="none" style={{ position: 'absolute', top: Platform.OS === 'android' ? 6 : 28, left: 0, right: 0, zIndex: 9999, alignItems: 'center' }}>
+      <View style={{ backgroundColor: 'rgba(0,0,0,0.72)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 }}>
+        <Text style={{ color: '#ff5566', fontSize: 11, fontFamily: 'monospace' }}>
+          {`K=${_dbgActive} L=${_dbgIsLive ? 1 : 0} S=${_dbgState} U=${_dbgShort}`}
+        </Text>
+      </View>
+    </View>
+  );
   const content = (
     <View style={[styles.container, inline && !fullscreen ? styles.inline : null]}>
+      {debugBar}
       {/* 画面层：旋转/镜像 transform 仅作用于视频（弹幕/控制层不转） */}
       <View style={StyleSheet.absoluteFill}>
         <View style={[StyleSheet.absoluteFill, { transform: mediaTransform }]}>
