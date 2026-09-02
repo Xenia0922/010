@@ -121,34 +121,16 @@ export default function MusicLibraryScreen() {
   const videoRef = useRef<any>(null);
 
   // 收藏计数：与 FAV 列表（isFavorite 过滤）一致，避免显示旧 id 键造成的虚高
-  // 收藏数 = 「已收藏的歌」数（同 title|artist 多版本计 1 首）
-  const favCount = useMemo(() => {
-    const seen = new Set<string>();
-    let n = 0;
-    for (const t of songs) {
-      if (!useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''), t)) continue;
-      const k = `${String(t.title || '').trim()}|${String(t.artist || '').trim()}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      n += 1;
-    }
-    return n;
-  }, [songs, favorites]);
+  // 收藏数 = 收藏版本数（与 FAV 列表一致）
+  const favCount = useMemo(
+    () => songs.filter((t) => useMusicPlayerStore.getState().isFavorite(String(t.musicId || t.id || ''), t)).length,
+    [songs, favorites],
+  );
   const filteredSongs = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     let list = songs;
     if (albumFilter) list = list.filter(item => String(item.groupLabel || '') === albumFilter.groupLabel && String(item.album || '') === albumFilter.album);
-    else if (group === 'FAV') {
-      list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
-      // 一首歌一个收藏：同 title|artist 多版本只显示一条
-      const seenK = new Set<string>();
-      list = list.filter(item => {
-        const k = `${String(item.title || '').trim()}|${String(item.artist || '').trim()}`;
-        if (seenK.has(k)) return false;
-        seenK.add(k);
-        return true;
-      });
-    }
+    else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
     else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
@@ -205,8 +187,9 @@ export default function MusicLibraryScreen() {
       // 同名同专辑合并时 **R2 优先**（用户要求：R2 字段完整/时长准；官方同曲只作 R2 缺失时的补充）
       const seen = new Set<string>();
       const merged: any[] = [];
+      // 大小写不敏感：SAY NO / Say No 视为同一专辑，避免重复条目
       const dedupKey = (t: any) =>
-        `${String(t.title || '').trim()}|${String(t.artist || '').trim()}|${String(t.album || '').trim()}`;
+        `${String(t.title || '').trim().toLowerCase()}|${String(t.artist || '').trim().toLowerCase()}|${String(t.album || '').trim().toLowerCase()}`;
       r2.forEach((t: any) => {
         const key = dedupKey(t);
         if (seen.has(key)) return;
