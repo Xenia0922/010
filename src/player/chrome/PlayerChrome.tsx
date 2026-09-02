@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, GestureResponderEvent, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, GestureResponderEvent, Modal, PanResponder, Pressable, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { usePlayerStore } from '../store/playerStore';
@@ -51,6 +51,10 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const rate = usePlayerStore((s) => s.rate);
   const [moreVisible, setMoreVisible] = useState(false);
   const [rateSheetVisible, setRateSheetVisible] = useState(false);
+  const { width: screenW } = useWindowDimensions();
+  const tapRef = useRef<{ t: number; side: 'l' | 'r' } | null>(null);
+  const [seekFlash, setSeekFlash] = useState<number | null>(null);
+  const seekFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 控制条淡入淡出
   const controlsOpacity = useRef(new Animated.Value(1)).current;
@@ -96,6 +100,32 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, [showControls, source?.url]);
+
+  // 双击快进/快退：±10s（点播）；单击唤出/隐藏控制条（延迟 320ms 等双击判定）
+  const onVideoTap = useCallback((side: 'l' | 'r') => {
+    const now = Date.now();
+    const prev = tapRef.current;
+    if (prev && now - prev.t < 320 && prev.side === side) {
+      tapRef.current = null;
+      const s = usePlayerStore.getState();
+      if (s.source?.kind !== 'live' && s.duration > 0) {
+        const delta = side === 'r' ? 10 : -10;
+        const base = s.position;
+        seekTo(Math.max(0, Math.min(s.duration, base + delta)));
+        setSeekFlash(delta);
+        if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
+        seekFlashTimer.current = setTimeout(() => setSeekFlash(null), 900);
+      }
+      return;
+    }
+    tapRef.current = { t: now, side };
+    setTimeout(() => {
+      if (tapRef.current && tapRef.current.t === now) {
+        tapRef.current = null;
+        showControls();
+      }
+    }, 320);
+  }, [showControls]);
 
   if (!source) return null;
 
@@ -211,9 +241,37 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </View>
       ) : null}
 
+      {/* 暂停/停止态：中央大播放钮 */}
+      {!error && !isLive && state !== 'playing' && state !== 'loading' ? (
+        <Pressable
+          style={styles.centerPlayWrap}
+          onPress={() => { togglePlay(); }}
+        >
+          <View style={styles.centerPlayBtn}>
+            <MaterialCommunityIcons name="play" size={30} color="#fff" style={{ marginLeft: 3 }} />
+          </View>
+        </Pressable>
+      ) : null}
+
+      {/* 双击快进/回退提示 */}
+      {seekFlash != null ? (
+        <View style={styles.seekFlashWrap} pointerEvents="none">
+          <MaterialCommunityIcons name={seekFlash > 0 ? 'fast-forward' : 'rewind'} size={22} color="#fff" />
+          <Text style={styles.seekFlashText}>{seekFlash > 0 ? `+${seekFlash}s` : `${seekFlash}s`}</Text>
+        </View>
+      ) : null}
+
       {/* 底部控制坞：底部渐变压暗层 + 两行（进度行 / 控制行）。
           唤出层始终可点（控制条隐藏后点屏幕任意处唤出）；渐变/坞内容按 controlsVisible 显隐 */}
-      <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={showControls} />
+      {/* 双击快进/回退 + 单击唤出层（全屏播放器；inline 内嵌点按即唤出） */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={(e) => {
+          if (inline) { showControls(); return; }
+          const x = e.nativeEvent.locationX ?? 0;
+          onVideoTap(x < screenW / 2 ? 'l' : 'r');
+        }}
+      />
       <View style={StyleSheet.absoluteFill} pointerEvents={controlsVisible ? 'box-none' : 'none'}>
         <Animated.View pointerEvents="none" style={{ opacity: controlsOpacity }}>
           <LinearGradient
@@ -374,6 +432,19 @@ const styles = StyleSheet.create({
   ctrlHintText: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginLeft: 8, flexShrink: 1 },
   ctrlBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   rateText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  centerPlayWrap: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 15,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  centerPlayBtn: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
+  },
+  seekFlashWrap: {
+    position: 'absolute', left: 0, right: 0, top: '38%', zIndex: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  seekFlashText: { color: '#fff', fontSize: 15, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   loadingWrap: {
     position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 20,
     alignItems: 'center', justifyContent: 'center', gap: 10,
