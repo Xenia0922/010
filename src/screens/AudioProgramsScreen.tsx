@@ -153,6 +153,17 @@ export default function AudioProgramsScreen() {
   };
 
   const active = playing ? (playing.talkId ?? playing.id) : undefined;
+  const onItemPress = (item: any) => {
+    const sameActive = String(item.talkId || item.id) === String(active || '');
+    if (sameActive && playUrls.length) {
+      // 活动节目再点：暂停/继续（不重新解析从头播）
+      const ps = usePlayerStore.getState();
+      if (ps.state === 'playing') ps.setState('paused');
+      else if (ps.state === 'paused') ps.setState('playing');
+      return;
+    }
+    play(item);
+  };
 
   return (
     <View style={styles.container}>
@@ -228,7 +239,7 @@ export default function AudioProgramsScreen() {
                 program={programs[0]}
                 isActive={String(active || '') === String(programs[0].talkId || programs[0].id)}
                 isResolving={String(active || '') === String(programs[0].talkId || programs[0].id) && playUrls.length === 0}
-                onPress={() => play(programs[0])}
+                onPress={() => onItemPress(programs[0])}
               />
             ) : null
           }
@@ -239,7 +250,7 @@ export default function AudioProgramsScreen() {
               <FadeInView delay={index < 12 ? 60 + index * 25 : 0} distance={8}>
                 <ScalePressable
                   style={[styles.progItem, isActive && { backgroundColor: palette.tintSoft }]}
-                  onPress={() => play(item)}
+                  onPress={() => onItemPress(item)}
                   pressedScale={0.97}
                 >
                   <View style={[styles.iconWrap, { backgroundColor: palette.fill3 }]}>
