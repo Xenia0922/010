@@ -88,7 +88,15 @@ export const NativeKernel = forwardRef<NativeKernelHandle, Props>(function Nativ
       onBuffer={(e) => {
         onBufferChange?.(!!e?.isBuffering);
       }}
-      onError={(event: any) => onError(JSON.stringify(event?.error || event).slice(0, 220))}
+      onError={(event: any) => {
+        try {
+          const raw = event?.error || event;
+          const msg = String(raw?.message || raw?.errorType || raw?.type || raw?.code || raw?.cause?.message || '');
+          const full = JSON.stringify(raw || {}).slice(0, 1400);
+          logInfo(`[vod] onError msg=${msg.slice(0, 260)} full=${full.slice(0, 1000)}`, 'player.native');
+        } catch {}
+        onError(JSON.stringify(event?.error || event).slice(0, 220));
+      }}
     />
   );
 });
