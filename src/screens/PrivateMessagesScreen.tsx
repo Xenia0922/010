@@ -24,7 +24,7 @@ import { CenterSpinner } from '../components/Loaders';
 import { EmptyState, ErrorState } from '../components/StateViews';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
-import { formatTimestamp } from '../utils/format';
+import { formatTimestamp , toMs } from '../utils/format';
 import { parseDurationSeconds } from '../utils/duration';
 import { errorMessage, messagePayload, messageText, normalizeUrl, parseMaybeJson, pickText, unwrapList } from '../utils/data';
 import pocketApi from '../api/pocket48';
@@ -347,7 +347,7 @@ export default function PrivateMessagesScreen() {
     const idxOf: Record<string, number> = { today: 0, yesterday: 1, more: 2 };
     const groupOf = (ts: number): string => {
       if (!ts) return 'more';
-      const d = new Date(ts);
+      const d = new Date(toMs(ts));
       const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
       const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
       if (key === todayStr) return 'today';
@@ -554,7 +554,7 @@ export default function PrivateMessagesScreen() {
     // 聊天行数据：按天插入日期分隔条 + 3 分钟内同侧消息分组（组内连排小圆角）
     const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
     const dayKeyOf = (ts: number) => {
-      const d = new Date(ts);
+      const d = new Date(toMs(ts));
       return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     };
     const todayK = dayKeyOf(Date.now());
@@ -563,7 +563,7 @@ export default function PrivateMessagesScreen() {
       const k = dayKeyOf(ts);
       if (k === todayK) return t('今天');
       if (k === yesterdayK) return t('昨天');
-      return `${pad2(new Date(ts).getMonth() + 1)}-${pad2(new Date(ts).getDate())}`;
+      return `${pad2(new Date(toMs(ts)).getMonth() + 1)}-${pad2(new Date(toMs(ts)).getDate())}`;
     };
     const chatRows: { type: 'date' | 'msg'; key: string; label?: string; item?: any; groupStart?: boolean }[] = [];
     let prevDay = '';

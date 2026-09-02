@@ -28,7 +28,7 @@ import pocketApi from '../api/pocket48';
 import { FadeInView } from '../components/Motion';
 import { Member } from '../types';
 import { errorMessage, normalizeUrl, pickText, unwrapList } from '../utils/data';
-import { formatTimestamp } from '../utils/format';
+import { formatTimestamp , toMs } from '../utils/format';
 import { parseDurationSeconds } from '../utils/duration';
 import { usePalette, radii, radiiAlias } from '../theme';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -320,7 +320,7 @@ export default function FlipScreen() {
   const flipRows = useMemo(() => {
     const monthOf = (ts: number): string => {
       if (!ts) return t('未知时间');
-      const d = new Date(ts);
+      const d = new Date(toMs(ts));
       return t('{y}年{m}月', { y: d.getFullYear(), m: d.getMonth() + 1 });
     };
     const order: string[] = [];

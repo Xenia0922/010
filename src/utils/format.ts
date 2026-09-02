@@ -1,16 +1,24 @@
 import { RoomMessage } from '../types';
 
-export function formatTimestamp(ts: number | string | null | undefined): string {
-  if (ts === null || ts === undefined || ts === '') return '';
+/** 时间戳 → 毫秒：10 位(秒)转毫秒；13 位毫秒原样；字符串数字同样处理 */
+export function toMs(ts: number | string | null | undefined): number {
+  if (ts === null || ts === undefined || ts === '') return 0;
   let value: number | string = ts;
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (!trimmed) return '';
+    if (!trimmed) return 0;
     value = /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed.replace(/-/g, '/');
   }
   if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 10000000000) {
     value *= 1000;
   }
+  return Number(value) || 0;
+}
+
+export function formatTimestamp(ts: number | string | null | undefined): string {
+  if (ts === null || ts === undefined || ts === '') return '';
+  const value = toMs(ts);
+  if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const y = date.getFullYear();

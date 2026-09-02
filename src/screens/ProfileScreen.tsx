@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { toMs } from '../utils/format';
 import {
   View,
   Text,
@@ -42,7 +43,7 @@ function normalizeList(value: any): any[] {
 }
 
 function formatDate(time: any) {
-  const d = new Date(Number(time));
+  const d = new Date(toMs(Number(time)));
   if (isNaN(d.getTime())) return '-';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

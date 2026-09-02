@@ -7,6 +7,7 @@
  * 业务逻辑 / API / 数据流 / 路由 / i18n 原文一律不动，仅重组布局。
  */
 import React, { useEffect, useState } from 'react';
+import { toMs } from '../utils/format';
 import {
   Alert,
   Linking,
@@ -130,7 +131,7 @@ function ChipRow<T>({ options, value, onChange }: { options: { label: string; va
 
 function formatTime(ts: number): string {
   if (!ts) return '';
-  const d = new Date(ts);
+  const d = new Date(toMs(ts));
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -237,14 +238,14 @@ export default function SettingsScreen() {
             icon="github"
             title={t('本项目仓库')}
             value="Xenia0922/yaya_msg_mobile"
-            onPress={() => Linking.openURL('https://github.com/Xenia0922/yaya_msg_mobile')}
+            onPress={() => Linking.openURL('https://github.com/Xenia0922/yaya_msg_mobile').catch(() => {})}
           />
           <View style={[styles.divider, { backgroundColor: palette.innerStroke }]} />
           <Row
             icon="download-circle"
             title={t('下载页')}
             value="010push.a23xyz.xyz/app"
-            onPress={() => Linking.openURL('https://010push.a23xyz.xyz/app/')}
+            onPress={() => Linking.openURL('https://010push.a23xyz.xyz/app/').catch(() => {})}
           />
           <View style={[styles.divider, { backgroundColor: palette.innerStroke }]} />
           <Row
