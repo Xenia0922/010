@@ -30,6 +30,11 @@ public class LiveExoViewManager extends SimpleViewManager<LiveExoView> {
     view.setUrl(url);
   }
 
+  @ReactProp(name = "paused", defaultBoolean = false)
+  public void setPaused(LiveExoView view, boolean paused) {
+    view.setPaused(paused);
+  }
+
   @ReactProp(name = "audioOnly")
   public void setAudioOnly(LiveExoView view, boolean audioOnly) {
     view.setAudioOnly(audioOnly);

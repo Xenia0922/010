@@ -47,6 +47,8 @@ export const LiveExoView = Platform.OS === 'android'
       url: string;
       /** 纯音频模式：不渲染视频画面，仅解码音频（上麦/电台流） */
       audioOnly?: boolean;
+      /** 暂停/恢复（原生 Exo 播放控制，统一播放器控制条使用） */
+      paused?: boolean;
       onSize?: (e: { nativeEvent: LiveSizeEventData }) => void;
       /** 原生重试耗尽后回调：播放失败/断流（message 为失败原因） */
       onError?: (e: { nativeEvent: { message: string } }) => void;

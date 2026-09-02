@@ -41,6 +41,7 @@ public class LiveExoView extends FrameLayout {
   private ExoPlayer player;
   private String url = "";
   private int retryCount = 0;
+  private volatile boolean paused = false;
   private int videoWidth = 0;
   private int videoHeight = 0;
   private float videoPixelRatio = 1f;
@@ -91,6 +92,17 @@ public class LiveExoView extends FrameLayout {
     }
   }
 
+  /** JS 暂停/恢复（统一播放器控制条：播放/暂停直接控原生播放） */
+  public void setPaused(boolean p) {
+    paused = p;
+    if (player != null) {
+      try {
+        player.setPlayWhenReady(!p);
+      } catch (Throwable ignored) {
+      }
+    }
+  }
+
   public void setUrl(@Nullable String nextUrl) {
     String cleaned = nextUrl == null ? "" : nextUrl.trim();
     if (cleaned.equals(url)) return;
@@ -137,7 +149,7 @@ public class LiveExoView extends FrameLayout {
           : new DefaultDataSource.Factory(getContext());
       player.setMediaSource(new ProgressiveMediaSource.Factory(factory)
           .createMediaSource(MediaItem.fromUri(Uri.parse(url))));
-      player.setPlayWhenReady(true);
+      player.setPlayWhenReady(!paused);
       player.addListener(new Player.Listener() {
         @Override
         public void onPlaybackStateChanged(int state) {
