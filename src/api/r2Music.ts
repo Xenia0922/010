@@ -170,8 +170,10 @@ export async function loadR2Music(force = false): Promise<any[]> {
  * 用户进音乐库时直接命中缓存秒开，不再干等首拉。
  */
 export async function prefetchR2Music(): Promise<void> {
+  // 节流（用户要求不施压 API）：非 force——24h 缓存新鲜则不请求；
+  // 过期时 stale-while-revalidate 自动后台刷新；绝不每次冷启动全量拉 R2（1MB）
   try {
-    await loadR2Music(true);
+    await loadR2Music(false);
   } catch {
     /* 静默：预取失败不影响启动，用户进音乐库时再正常加载 */
   }
