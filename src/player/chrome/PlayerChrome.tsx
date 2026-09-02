@@ -49,6 +49,8 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const useWebKernel = usePlayerStore((s) => s.useWebKernel);
   const danmakuOn = usePlayerStore((s) => s.danmakuOn);
   const rate = usePlayerStore((s) => s.rate);
+  const rotateDeg = usePlayerStore((s) => s.rotateDeg);
+  const mirrorMode = usePlayerStore((s) => s.mirrorMode);
   const [moreVisible, setMoreVisible] = useState(false);
   const [rateSheetVisible, setRateSheetVisible] = useState(false);
   const { width: screenW } = useWindowDimensions();
@@ -363,6 +365,36 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
               </TouchableOpacity>
             </View>
             <View style={styles.moreGrid}>
+              {/* 画面旋转/镜像（桌面 DPlayer 对齐） */}
+              <TouchableOpacity
+                style={styles.moreItem}
+                onPress={() => {
+                  const st = usePlayerStore.getState();
+                  st.setRotateDeg((st.rotateDeg + 90) % 360);
+                  setMoreVisible(false);
+                  showControls();
+                }}
+              >
+                <MaterialCommunityIcons name="sync" size={22} color={palette.labelSecondary} />
+                <Text style={[styles.moreLabel, { color: palette.labelSecondary }]}>
+                  {rotateDeg ? t('旋转 {deg}°', { deg: rotateDeg }) : t('旋转')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.moreItem}
+                onPress={() => {
+                  const st = usePlayerStore.getState();
+                  const next = st.mirrorMode === 'none' ? 'horizontal' : st.mirrorMode === 'horizontal' ? 'vertical' : 'none';
+                  st.setMirrorMode(next);
+                  setMoreVisible(false);
+                  showControls();
+                }}
+              >
+                <MaterialCommunityIcons name="flip-horizontal" size={22} color={palette.labelSecondary} />
+                <Text style={[styles.moreLabel, { color: palette.labelSecondary }]}>
+                  {mirrorMode === 'none' ? t('镜像') : mirrorMode === 'horizontal' ? t('水平镜像') : t('垂直镜像')}
+                </Text>
+              </TouchableOpacity>
               {extraActions.map((action) => (
                 <TouchableOpacity
                   key={action.key}

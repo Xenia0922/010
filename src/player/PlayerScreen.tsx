@@ -51,6 +51,13 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
   const openedFor = useRef('');
   const sourceUrl = source.url || '';
   const fullscreen = usePlayerStore((s) => s.fullscreen);
+  const rotateDeg = usePlayerStore((s) => s.rotateDeg);
+  const mirrorMode = usePlayerStore((s) => s.mirrorMode);
+  // 画面旋转/镜像 transform（桌面 DPlayer 对齐：竖屏视频旋转 90° 等）
+  const mediaTransform: any = [];
+  if (mirrorMode === 'horizontal') mediaTransform.push({ scaleX: -1 });
+  if (mirrorMode === 'vertical') mediaTransform.push({ scaleY: -1 });
+  if (rotateDeg) mediaTransform.push({ rotate: `${rotateDeg}deg` });
 
   useEffect(() => {
     if (openedFor.current === sourceUrl) return;
@@ -68,7 +75,12 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
 
   const content = (
     <View style={[styles.container, inline && !fullscreen ? styles.inline : null]}>
-      <PlayerCore onVideoSize={onVideoSize} resumeAt={resumeAt} />
+      {/* 画面层：旋转/镜像 transform 仅作用于视频（弹幕/控制层不转） */}
+      <View style={StyleSheet.absoluteFill}>
+        <View style={[StyleSheet.absoluteFill, { transform: mediaTransform }]}>
+          <PlayerCore onVideoSize={onVideoSize} resumeAt={resumeAt} />
+        </View>
+      </View>
       {children}
       <PlayerChrome features={features} extraActions={extraActions} onClose={onClose} inline={inline} onRetry={onRetry} />
       <FullscreenManager />

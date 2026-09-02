@@ -31,6 +31,10 @@ interface PlayerState {
   qualityQn: number | null;
   /** 播放倍速（回放可用；live 恒 1） */
   rate: number;
+  /** 画面旋转角度（桌面对齐：90° 步进，竖屏视频旋转用） */
+  rotateDeg: number;
+  /** 镜像模式：none/horizontal/vertical */
+  mirrorMode: 'none' | 'horizontal' | 'vertical';
   /** seek 指令：UI 写入，PlayerCore 消费后清零（与音乐 store seekTarget 同模式） */
   seekTarget: number;
   /** 弹幕开关 */
@@ -50,6 +54,8 @@ interface PlayerState {
   setActiveKernel: (k: PlayerState['activeKernel']) => void;
   setQualityQn: (qn: number | null) => void;
   setRate: (r: number) => void;
+  setRotateDeg: (deg: number) => void;
+  setMirrorMode: (m: 'none' | 'horizontal' | 'vertical') => void;
   setSeekTarget: (t: number) => void;
   toggleDanmaku: () => void;
   /** 播放失败时切到下一候选线路；返回是否切换成功（无候选/已到末尾 → false） */
@@ -77,6 +83,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   activeKernel: 'native',
   qualityQn: null,
   rate: 1,
+  rotateDeg: 0,
+  mirrorMode: 'none' as const,
   seekTarget: 0,
   danmakuOn: true,
 
@@ -97,6 +105,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         activeKernel: source.needsNativeExo ? 'exo' : 'native',
         qualityQn: null,
         rate: 1,
+        rotateDeg: 0,
+        mirrorMode: 'none' as const,
         seekTarget: 0,
         danmakuOn: true,
         candidateUrls: urls,
@@ -128,6 +138,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setActiveKernel: (activeKernel) => set({ activeKernel }),
   setQualityQn: (qualityQn) => set({ qualityQn }),
   setRate: (rate) => set({ rate }),
+  setRotateDeg: (rotateDeg) => set({ rotateDeg: ((rotateDeg % 360) + 360) % 360 }),
+  setMirrorMode: (mirrorMode) => set({ mirrorMode }),
   setSeekTarget: (seekTarget) => set({ seekTarget }),
   toggleDanmaku: () => set((s) => ({ danmakuOn: !s.danmakuOn })),
   nextCandidate: () => {
