@@ -19,7 +19,6 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useNavigationState } from '@react-navigation/native';
 import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import { useUiStore } from '../store';
 import { usePalette, motion, makeShadows } from '../theme';
@@ -40,9 +39,10 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const shadows = makeShadows(palette.name === 'dark');
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
-  // B1 全局化修复：tab 根页（Home/Media/Rooms/Settings）迷你条避让 TabBar，
-  // 不再遮挡底部 tab 栏；stack 页（音乐库等）仍贴底悬浮。
-  const currentRoute = useNavigationState((s) => s?.routes?.[s.index]?.name);
+  // B1 全局化修复：tab 根页（Main）迷你条避让 TabBar，不再遮挡底部 tab 栏；
+  // stack 页（音乐库等）仍贴底悬浮。当前路由由容器级 onStateChange 写入
+  // useUiStore.currentRouteName（本组件挂在 Navigator 外，useNavigationState 会抛错）
+  const currentRoute = useUiStore((s) => s.currentRouteName);
   const tabBarHidden = useUiStore((s) => s.tabBarHidden);
   const isTabRoot = currentRoute === 'Main' && !tabBarHidden;
   const barBottom = isTabRoot ? 84 + insets.bottom : Math.max(10, insets.bottom - 32);

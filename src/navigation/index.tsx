@@ -258,7 +258,14 @@ export default function AppNavigator() {
           <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: bgScrim }]} />
         </View>
       ) : null}
-      <NavigationContainer theme={themed}>
+      <NavigationContainer
+        theme={themed}
+        onStateChange={(state) => {
+          // 容器级路由监听：写 useUiStore.currentRouteName 供 Navigator 外组件（如音乐迷你条）读取，
+          // 避免在这些位置 useNavigationState 抛 "Couldn't get the navigation state"
+          useUiStore.getState().setCurrentRouteName(state?.routes?.[state.index]?.name ?? '');
+        }}
+      >
       <>
         <Stack.Navigator
           screenOptions={{
