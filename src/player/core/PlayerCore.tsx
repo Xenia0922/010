@@ -42,6 +42,12 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
       usePlayerStore.getState().setSeekTarget(0);
       return;
     }
+    // 非有限时长 = 误标 VOD 的直播 HLS（Exo 对其 seek 会在原生线程抛异常闪退）→ 丢弃指令
+    const sd = usePlayerStore.getState().duration;
+    if (!Number.isFinite(sd) || sd <= 0) {
+      usePlayerStore.getState().setSeekTarget(0);
+      return;
+    }
     if (!useWebKernel && activeKernel === 'native' && nativeRef.current) {
       nativeRef.current.seek(seekTarget);
       usePlayerStore.getState().setSeekTarget(0);
