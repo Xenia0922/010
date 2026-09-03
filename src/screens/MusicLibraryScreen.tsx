@@ -68,8 +68,19 @@ function EqualizerBars({ color, size = 13 }: { color: string; size?: number }) {
 }
 
 /** 拼接歌曲元信息并去重：专辑/歌手/团体名常重复（如 album=SNH48 + artist=SNH48），只保留一份 */
-// 收藏紧跟全部之后（用户要求：放太后面翻不到）；其余按团体排列
-const GROUP_TABS = ['ALL', 'FAV', 'SNH48', 'GNZ48', 'BEJ48', 'AKB48', 'CKG48', 'CGT48', 'SHY48', 'TSH48', 'TPE48', '7SENSES'];
+// 收藏紧跟全部之后（用户要求：放太后面翻不到）；其余按团体排列。
+// 7SENSES 是 SNH48 旗下子团（还有 BLUEV/DEMOON/HO2/Color Girls 等），不单列 tab、归入 SNH48 段。
+const SNH_FAMILY = new Set(['SNH48', '7SENSES', 'BLUEV', 'DEMOON', 'HO2', 'COLOR GIRLS', 'Color Girls', '塞纳河组合']);
+/** 团体 → 主团（子团归一，如 7SENSES→SNH48） */
+const groupFamily = (g: string): string => (SNH_FAMILY.has(String(g || '').trim()) ? 'SNH48' : String(g || '').trim());
+/** 段序：SNH48 系(含子团) → GNZ48 → BEJ48 → …（用户要求） */
+const albumGroupOrder = (g: string): number => {
+  const up = groupFamily(g).toUpperCase();
+  if (up === 'SNH48') return 0;
+  const map: Record<string, number> = { GNZ48: 10, BEJ48: 20, AKB48: 30, CKG48: 40, CGT48: 50, SHY48: 60, TSH48: 70, TPE48: 80 };
+  return map[up] ?? 90;
+};
+const GROUP_TABS = ['ALL', 'FAV', 'SNH48', 'GNZ48', 'BEJ48', 'AKB48', 'CKG48', 'CGT48', 'SHY48', 'TSH48', 'TPE48'];
 const GROUP_LABELS: Record<string, string> = {
   ALL: '全部',
   SNH48: 'SNH48',
@@ -131,7 +142,7 @@ export default function MusicLibraryScreen() {
     let list = songs;
     if (albumFilter) list = list.filter(item => String(item.groupLabel || '') === albumFilter.groupLabel && String(item.album || '') === albumFilter.album);
     else if (group === 'FAV') list = list.filter(item => useMusicPlayerStore.getState().isFavorite(String(item.musicId || item.id || ''), item));
-    else if (group !== 'ALL') list = list.filter(item => (item.groupLabel || '') === group);
+    else if (group !== 'ALL') list = list.filter(item => groupFamily(item.groupLabel) === group);
     if (keyword) list = list.filter(item => [item.title, item.artist, item.album, item.groupLabel].filter(Boolean).join(' ').toLowerCase().includes(keyword));
     return list;
   }, [query, songs, group, favorites, albumFilter]);
@@ -159,10 +170,14 @@ export default function MusicLibraryScreen() {
       map.set(key, entry);
     }
     return [...map.values()].sort((a, b) => {
-      const ga = a.groupLabel.toLowerCase();
-      const gb = b.groupLabel.toLowerCase();
+      // 段序 SNH48 系(含 7SENSES 等子团) → GNZ48 → BEJ48 → …（用户要求，勿改回字母序）
+      const oa = albumGroupOrder(a.groupLabel);
+      const ob = albumGroupOrder(b.groupLabel);
+      if (oa !== ob) return oa - ob;
+      const ga = String(a.groupLabel || '').toLowerCase();
+      const gb = String(b.groupLabel || '').toLowerCase();
       if (ga !== gb) return ga < gb ? -1 : 1;
-      return a.album.localeCompare(b.album, 'zh');
+      return String(a.album || '').localeCompare(String(b.album || ''), 'zh');
     });
   }, [filteredSongs]);
 
@@ -206,17 +221,9 @@ export default function MusicLibraryScreen() {
       // 排序（对齐桌面 sortKey='source' 语义 + 用户要求：SNH48 系子团归 SNH48 段）：
       // 段序 SNH48 系(含 7SENSES/BLUEV/DEMOON/HO2/Color Girls/塞纳河组合) → GNZ → ... ；
       // 同段内按 sourceIndex（官方源小在前，R2 公演源大在后），R2 内再按子团聚合后按标题
-      const SNH_FAMILY = new Set(['SNH48', '7SENSES', 'BLUEV', 'DEMOON', 'HO2', 'COLOR GIRLS', 'Color Girls', '塞纳河组合']);
-      const groupOrder = (g: string): number => {
-        const raw = String(g || '').trim();
-        const up = raw.toUpperCase();
-        if (SNH_FAMILY.has(raw) || up === 'COLOR GIRLS') return 0;
-        const map: Record<string, number> = { GNZ48: 10, BEJ48: 20, AKB48: 30, CKG48: 40, CGT48: 50, SHY48: 60, TSH48: 70, TPE48: 80 };
-        return map[up] ?? 90;
-      };
       merged.sort((a: any, b: any) => {
-        const oa = groupOrder(a.groupLabel);
-        const ob = groupOrder(b.groupLabel);
+        const oa = albumGroupOrder(a.groupLabel);
+        const ob = albumGroupOrder(b.groupLabel);
         if (oa !== ob) return oa - ob;
         const sa = Number(a.sourceIndex) || 0;
         const sb = Number(b.sourceIndex) || 0;
