@@ -827,8 +827,26 @@ function roomMedia(item: any): RoomMedia | null {
     || /(回放|录播|replay|playback)/i.test(`${String(text || '')} ${String(body?.title || '')} ${String(body?.content || '')} ${String(body?.desc || '')} ${String(item?.title || '')}`)
     || /(replayUrl|playbackUrl|recordUrl|\/replay\/|\/record\/|\/playback\/)/i.test(`${url} ${String(body?.replayUrl || '')} ${String(body?.playbackUrl || '')} ${String(body?.recordUrl || '')}`));
   const mediaResult = { type, url, title, duration, liveId, cover, replayHint };
+  // 诊断探针：消息被判成图片(非常规 EXPRESS)或回退扫 URL 命中时，打印来源（用户反馈徐钰涵每条消息带公式照）
+  try {
+    if (type === 'image' || (url && !liveId && !msgType.includes('EXPRESS'))) {
+      if (diagnoseImgCount.current < 6) {
+        diagnoseImgCount.current += 1;
+        const topKeys = Object.keys(item || {}).slice(0, 14).join(',');
+        const bodyKeys = Object.keys(body || {}).slice(0, 14).join(',');
+        const extKeys = Object.keys(ext || {}).slice(0, 14).join(',');
+        console.warn(`[roomMedia-img] type=${type} msgType=${msgType} url=${String(url || '').slice(0, 90)} text=${String(text || '').slice(0, 40)}`);
+        console.warn(`[roomMedia-img] item=${topKeys}`);
+        console.warn(`[roomMedia-img] body=${bodyKeys}`);
+        console.warn(`[roomMedia-img] ext=${extKeys}`);
+      }
+    }
+  } catch {}
   return mediaResult;
 }
+
+/** 公式照诊断探针限量（避免刷屏） */
+const diagnoseImgCount = { current: 0 };
 
 function roomGiftInfo(item: any): { name: string; num: number; image: string; total: string } | null {
   if (!item) return null;
