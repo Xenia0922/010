@@ -72,17 +72,35 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   const progW = useRef(0);
   const progX = useRef(0);
   const dragRatioRef = useRef<number | null>(null);
+  /** 正在拖进度条：禁止控制条自动隐藏（防 hide 卸载 responder 目标触发闪退） */
+  const dragLockRef = useRef(false);
   // 拖动中本地预览比例（UI 显示用）；松手才写 store/seek 一次——避免每帧 setPosition
   // 高频触发全局订阅组件渲染风暴（实测拖动导致 ANR/闪退、日志来不及落盘）
   const [dragRatio, setDragRatio] = useState<number | null>(null);
+  // ⚠️ 拖进度条闪退防护：手势回调任何同步异常都 try/catch 吞掉（冒到 mqt_native_modules 线程 =
+  // JS 致命异常直接闪退且无日志）；拖动期间禁止控制条自动隐藏（3s 定时器若在拖动中 hide，
+  // responder 目标被卸载 → RN 触控分发内部抛 undefined → 同款闪退）。
   const progPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e: GestureResponderEvent) => onProgDown(e.nativeEvent.pageX),
-      onPanResponderMove: (e: GestureResponderEvent) => onProgMove(e.nativeEvent.pageX),
-      onPanResponderRelease: () => onProgUp(),
-      onPanResponderTerminate: () => onProgUp(),
+      onPanResponderGrant: (e: GestureResponderEvent) => {
+        try {
+          dragLockRef.current = true;
+          onProgDown(e.nativeEvent.pageX);
+        } catch (err) {
+          console.warn('[PlayerChrome] prog grant err', err);
+        }
+      },
+      onPanResponderMove: (e: GestureResponderEvent) => {
+        try { onProgMove(e.nativeEvent.pageX); } catch (err) { console.warn('[PlayerChrome] prog move err', err); }
+      },
+      onPanResponderRelease: () => {
+        try { dragLockRef.current = false; onProgUp(); } catch (err) { console.warn('[PlayerChrome] prog up err', err); }
+      },
+      onPanResponderTerminate: () => {
+        try { dragLockRef.current = false; onProgUp(); } catch (err) { console.warn('[PlayerChrome] prog terminate err', err); }
+      },
     }),
   ).current;
 
@@ -91,6 +109,11 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       // 播放中才自动隐藏（全屏同样隐藏）；暂停/缓冲保持显示（用户在操作/看画面）
+      // 拖动中绝不离场：hide 会把正在被触摸的 responder 视图卸载 → 原生触控分发崩
+      if (dragLockRef.current) {
+        showControls();
+        return;
+      }
       const s = usePlayerStore.getState();
       if (s.state === 'playing') s.toggleControls(false);
     }, CONTROLS_HIDE_MS);
