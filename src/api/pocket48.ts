@@ -957,6 +957,13 @@ export const pocketApi = {
   async getOpenLiveOne(liveId: string) {
     const id = String(liveId);
     return tryPocketPost([
+      // v2.7.3 语义：默认请求即返回 rtmp（与桌面/官方一致的原始流）
+      {
+        url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
+        payload: { liveId: id },
+        tokenRequired: false,
+        label: 'open live one',
+      },
       {
         url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
         payload: { liveId: id, streamProtocol: 'FLV' },
@@ -969,18 +976,19 @@ export const pocketApi = {
         tokenRequired: false,
         label: 'open live one hls',
       },
-      {
-        url: `${BASE}/live/api/v1/live/getOpenLiveOne`,
-        payload: { liveId: id, streamProtocol: 'RTMP' },
-        tokenRequired: false,
-        label: 'open live one rtmp',
-      },
     ], '获取公演详情失败');
   },
 
   async getLiveOne(liveId: string) {
     const id = String(liveId);
     return tryPocketPost([
+      // v2.7.3 语义：默认请求即返回 rtmp（与桌面/官方一致的原始流）
+      {
+        url: `${BASE}/live/api/v1/live/getLiveOne`,
+        payload: { liveId: id },
+        tokenRequired: false,
+        label: 'live one',
+      },
       {
         url: `${BASE}/live/api/v1/live/getLiveOne`,
         payload: { liveId: id, streamProtocol: 'FLV' },
@@ -992,12 +1000,6 @@ export const pocketApi = {
         payload: { liveId: id, streamProtocol: 'HLS' },
         tokenRequired: false,
         label: 'live one hls',
-      },
-      {
-        url: `${BASE}/live/api/v1/live/getLiveOne`,
-        payload: { liveId: id, streamProtocol: 'RTMP' },
-        tokenRequired: false,
-        label: 'live one rtmp',
       },
     ], '获取直播详情失败');
   },
