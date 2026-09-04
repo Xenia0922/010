@@ -44,7 +44,7 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
   // 钉死为 URL+headers 级稳定；续播位置只在首次挂载取一次。
   const resumeOnce = useRef<number>(resumeAt || 0);
   const html = useMemo(
-    () => getPlayerHtml(source.url, undefined, resumeOnce.current || 0, source.kind !== 'live', (source.headers || {}) as any),
+    () => getPlayerHtml(source.url, undefined, resumeOnce.current || 0, source.kind !== 'live', (source.headers || {}) as any, Number(source.volumeBoost) || 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [source.url, source.headers],
   );

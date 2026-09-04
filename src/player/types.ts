@@ -17,6 +17,8 @@ export interface PlayerSource {
   audioOnly?: boolean;
   /** 音量（B站流响度补偿 1.5 等） */
   volume?: number;
+  /** 网页内核音量增益（>1，经 WebAudio GainNode；原生 Exo 音量被系统 clamp ≤1） */
+  volumeBoost?: number;
 }
 
 export interface PlayerMeta {

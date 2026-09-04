@@ -442,7 +442,8 @@ export default function BilibiliLiveScreen() {
             url: streamUrl,
             urls: visibleCandidates.map((c) => c.url),
             headers: bilibiliApi.headers(currentCandidate?.realRoomId),
-            volume: 1.5,
+            volume: 1,
+            volumeBoost: 1.8, // B站源弱响度：网页内核经 WebAudio 预放大（Exo 原生音量 clamp ≤1 提不了）
           }}
           meta={{ title: streamTitle || t('B站直播') }}
           features={{ kernelSwitch: true, danmaku: true }}

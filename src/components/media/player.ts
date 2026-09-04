@@ -1,4 +1,4 @@
-export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime?: number, showControls = true, extraHeaders: Record<string, string> = {}): string {
+export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime?: number, showControls = true, extraHeaders: Record<string, string> = {}, volumeBoost = 1): string {
   const poster = posterUrl || '';
   const startTime = Number.isFinite(initialTime) && (initialTime as number) > 0 ? (initialTime as number) : 0;
   // 直播流不挂原生 controls：HTML5 播放条上的进度条/预览对直播无意义且遮挡画面
@@ -48,6 +48,26 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
 
   var startTime = ${JSON.stringify(startTime)};
   var EXTRA_HEADERS = ${JSON.stringify(extraHeaders || {})};
+  var VOLUME_BOOST = ${JSON.stringify(volumeBoost || 1)};
+  // B站等弱响度源经 WebAudio GainNode 预放大（gain>1 合法；ExoPlayer/原生音量被系统 clamp ≤1）
+  if (VOLUME_BOOST > 1.0001) {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        var actx = new AC();
+        var boostNode = actx.createGain();
+        boostNode.gain.value = VOLUME_BOOST;
+        var medSrc = actx.createMediaElementSource(video);
+        medSrc.connect(boostNode);
+        boostNode.connect(actx.destination);
+        function resumeAudio() { if (actx.state === 'suspended') actx.resume().catch(function(){}); }
+        document.addEventListener('touchstart', resumeAudio, { passive: true });
+        document.addEventListener('click', resumeAudio);
+        video.addEventListener('playing', resumeAudio);
+        video.addEventListener('canplay', resumeAudio);
+      }
+    } catch (e) {}
+  }
   // 请求级防盗链头（B站流必需；flv/hls 的 XHR 都经它补头）
   function applyHeaders(xhr) {
     try {
