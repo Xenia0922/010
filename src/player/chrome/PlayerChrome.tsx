@@ -80,6 +80,16 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   // ⚠️ 拖进度条闪退防护：手势回调任何同步异常都 try/catch 吞掉（冒到 mqt_native_modules 线程 =
   // JS 致命异常直接闪退且无日志）；拖动期间禁止控制条自动隐藏（3s 定时器若在拖动中 hide，
   // responder 目标被卸载 → RN 触控分发内部抛 undefined → 同款闪退）。
+  // ⚠️ 关键：PanResponder 由 useRef 只创建一次，闭包锁死「首次渲染作用域」的绑定；
+  // 而 seekTo/onProgDown/onProgUp 在 `if (!source) return null`（更早）之后才声明——
+  // 若首次渲染 source 为空，它们在该作用域永远处于 TDZ，之后每次触碰都抛
+  // "undefined is not a function"（曾导致拖进度条闪退）。解法：回调只经 ref 间接调用，
+  // ref 在每次渲染（有 source 时）重新指向当前函数。
+  const progCtl = useRef<{ down: (x: number) => void; move: (x: number) => void; up: () => void }>({
+    down: () => {},
+    move: () => {},
+    up: () => {},
+  });
   const progPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -87,19 +97,19 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
       onPanResponderGrant: (e: GestureResponderEvent) => {
         try {
           dragLockRef.current = true;
-          onProgDown(e.nativeEvent.pageX);
+          progCtl.current.down(e.nativeEvent.pageX);
         } catch (err) {
           console.warn('[PlayerChrome] prog grant err', err);
         }
       },
       onPanResponderMove: (e: GestureResponderEvent) => {
-        try { onProgMove(e.nativeEvent.pageX); } catch (err) { console.warn('[PlayerChrome] prog move err', err); }
+        try { progCtl.current.move(e.nativeEvent.pageX); } catch (err) { console.warn('[PlayerChrome] prog move err', err); }
       },
       onPanResponderRelease: () => {
-        try { dragLockRef.current = false; onProgUp(); } catch (err) { console.warn('[PlayerChrome] prog up err', err); }
+        try { dragLockRef.current = false; progCtl.current.up(); } catch (err) { console.warn('[PlayerChrome] prog up err', err); }
       },
       onPanResponderTerminate: () => {
-        try { dragLockRef.current = false; onProgUp(); } catch (err) { console.warn('[PlayerChrome] prog terminate err', err); }
+        try { dragLockRef.current = false; progCtl.current.up(); } catch (err) { console.warn('[PlayerChrome] prog terminate err', err); }
       },
     }),
   ).current;
@@ -133,10 +143,13 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     if (prev && now - prev.t < 320 && prev.side === side) {
       tapRef.current = null;
       const s = usePlayerStore.getState();
-      if (s.source?.kind !== 'live' && s.duration > 0) {
+      if (s.source?.kind !== 'live' && s.duration > 0 && (s.state === 'playing' || s.state === 'paused')) {
         const delta = side === 'r' ? 10 : -10;
         const base = s.position;
-        seekTo(Math.max(0, Math.min(s.duration, base + delta)));
+        const target = Math.max(0, Math.min(s.duration - 0.3, base + delta));
+        // 不依赖闭包 seekTo（useCallback 锁首帧作用域会 TDZ）——直接走 store
+        s.setPosition(target);
+        s.setSeekTarget(target);
         setSeekFlash(delta);
         if (seekFlashTimer.current) clearTimeout(seekFlashTimer.current);
         seekFlashTimer.current = setTimeout(() => setSeekFlash(null), 900);
@@ -227,6 +240,8 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
       if (st.duration > 0 && (st.state === 'playing' || st.state === 'paused')) seekTo(r * st.duration); // 松手一次写入
     }
   };
+  // 让 PanResponder 经 ref 拿到本次渲染的最新实现（须在定义之后、早退之前赋值）
+  progCtl.current = { down: onProgDown, move: onProgMove, up: onProgUp };
 
   return (
     <>

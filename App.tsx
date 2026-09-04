@@ -45,6 +45,14 @@ function installGlobalErrorHandler() {
   if (!eu || typeof eu.setGlobalHandler !== 'function') return;
   const prev = eu.getGlobalHandler ? eu.getGlobalHandler() : undefined;
   eu.setGlobalHandler((error: unknown, isFatal?: boolean) => {
+    try {
+      // 同步打到 logcat（ReactNativeJS tag），崩溃瞬间也能留下函数链
+      const e = error as any;
+      console.error('[yaya-crash] ' + String(e && (e.message || e)));
+      if (e && e.stack) console.error('[yaya-crash] ' + String(e.stack).slice(0, 1200));
+    } catch {
+      /* ignore */
+    }
     logCrash(error, isFatal ? 'global:fatal' : 'global');
     if (prev) {
       try {
