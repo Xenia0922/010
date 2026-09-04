@@ -248,6 +248,11 @@ export default function BilibiliLiveScreen() {
       cover: '',
       isLive: true,
       position: 0,
+      // 公演/B站：小窗也用网页内核（无 LIVE 标；带增益+防盗链 headers，音量与大屏一致）
+      web: {
+        headers: bilibiliApi.headers(currentCandidate?.realRoomId || (streamUrl.match(/\/(\d+)/)?.[1] || '')),
+        volumeBoost: 1.8,
+      },
       backTo: { mode: 'live', playUrl: streamUrl, playTitle: streamTitle, playCover: '' },
     });
     closePlayer();

@@ -8,6 +8,8 @@ export interface MiniPlayerInfo {
   isLive: boolean;
   /** 交棒给小窗时的播放位置（秒），小窗 onLoad 后 seek 续播 */
   position?: number;
+  /** 公演/B站直播走网页内核播放（去 LIVE 标 + WebAudio 增益） */
+  web?: { headers?: Record<string, string>; volumeBoost?: number };
   /** 点击小窗回放（全屏）参数：直接传回 MediaScreen 路由参数 */
   backTo: {
     mode: 'live' | 'vod';

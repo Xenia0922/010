@@ -20,18 +20,21 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Video from 'react-native-video';
+import { WebView } from 'react-native-webview';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import { usePalette } from '../theme';
 import { setPipPlaying, setPipAspect } from '../utils/pip';
 import { useI18n } from '../i18n';
 import { LiveExoView } from '../native/LivePlayer';
+import { getPlayerHtml } from './media/player';
 
-const W = 168;
+const W = 180;
 /** 高度按内容比例计算（竖屏内容窄条 -> 高条；横屏内容 16:9） */
-const H_MIN = 96;
-/** 小窗缩小档位：1 = 默认，0.72 = 缩小 */
-const SCALE_SMALL = 0.72;
+const H_MIN = 104;
+/** 小窗缩放档位：1 = 默认，1.18 = 放大，0.74 = 缩小（循环切换） */
+const SCALE_SMALL = 0.74;
+const SCALE_LARGE = 1.18;
 /** 拖动/点击判定阈值：位移小于该值视为点击 */
 const TAP_SLOP = 10;
 /** 控件自动隐藏时长（ms） */
@@ -156,6 +159,35 @@ export function MiniPlayer() {
   const lowerUrl = String(info?.url || '').toLowerCase();
   const isNativeLive = !!info?.isLive && !!info?.url && (lowerUrl.startsWith('rtmp://') || lowerUrl.includes('.flv')) && !!LiveExoView;
   const NativeLiveView = (LiveExoView || null) as React.ComponentType<{ style?: any; url: string; onSize?: (e: any) => void }> | null;
+  // 公演/B站直播小窗：网页内核（无 LIVE 标、带 WebAudio 增益与防盗链 headers，音量与大屏一致）
+  const useWebMini = !!info?.web && !!info?.isLive && /^https?:\/\//i.test(lowerUrl);
+  const webMiniRef = useRef<WebView>(null);
+  const webMiniHtml = useMemo(
+    () => (useWebMini
+      ? getPlayerHtml(info.url, undefined, 0, false, (info.web?.headers || {}) as any, Number(info.web?.volumeBoost) || 1)
+      : ''),
+    [useWebMini, info.url],
+  );
+  const handlePlayToggle = () => {
+    const cur = useMiniPlayerStore.getState().playing;
+    const next = !cur;
+    useMiniPlayerStore.getState().setPlaying(next);
+    if (useWebMini) {
+      try { webMiniRef.current?.postMessage(JSON.stringify({ type: next ? 'play' : 'pause' })); } catch {}
+    }
+  };
+  // 缩放档位循环：默认 1 → 放大 1.18 → 缩小 0.74 → 1
+  const cycleScale = () => setScale((sv) => (sv >= 1.1 ? SCALE_SMALL : sv < 0.9 ? 1 : SCALE_LARGE));
+  // 缩放后夹紧在屏内（放大时不超出右/下边缘）
+  useEffect(() => {
+    const maxX = Math.max(6, winW - boxW - 6);
+    const maxY = Math.max(6, winH - boxHNow - 6);
+    const bx = Math.min(Math.max(6, basePos.current.x), maxX);
+    const by = Math.min(Math.max(6, basePos.current.y), maxY);
+    basePos.current = { x: bx, y: by };
+    pos.setValue({ x: bx, y: by });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scale]);
 
   return (
     <>
@@ -173,7 +205,20 @@ export function MiniPlayer() {
           },
         ]}
       >
-        {isNativeLive && NativeLiveView ? (
+        {useWebMini ? (
+          <WebView
+            ref={webMiniRef}
+            key={info.url}
+            source={{ html: webMiniHtml }}
+            style={StyleSheet.absoluteFill}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            originWhitelist={['*']}
+            mixedContentMode="always"
+          />
+        ) : isNativeLive && NativeLiveView ? (
           /* RTMP/FLV 直播流：ExoPlayer 不支持，必须用原生 LiveExoView（与大播放器一致） */
           <NativeLiveView
             style={StyleSheet.absoluteFill}
@@ -304,15 +349,15 @@ export function MiniPlayer() {
             {/* 缩小/还原（右上角第二颗，循环切换尺寸档位） */}
             <TouchableOpacity
               style={styles.shrinkBtn}
-              onPress={() => setScale((s) => (s === 1 ? SCALE_SMALL : 1))}
+              onPress={cycleScale}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <MaterialCommunityIcons name={scale === 1 ? 'arrow-collapse' : 'arrow-expand-all'} size={14} color="#fff" />
+              <MaterialCommunityIcons name={scale > 1 ? 'arrow-collapse' : scale < 1 ? 'arrow-expand-all' : 'arrow-expand'} size={14} color="#fff" />
             </TouchableOpacity>
             {/* 暂停/继续（右下角） */}
             <TouchableOpacity
               style={styles.playBtn}
-              onPress={() => setPlaying(!playing)}
+              onPress={handlePlayToggle}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialCommunityIcons name={playing ? 'pause' : 'play'} size={14} color="#fff" />
