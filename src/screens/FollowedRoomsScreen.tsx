@@ -260,7 +260,10 @@ function collectUrls(value: any, result: string[] = [], depth = 0) {
     return result;
   }
   if (typeof value === 'object') {
-    const skipKeys = new Set(['avatar', 'headImg', 'headUrl', 'picPath', 'coverPath', 'coverUrl', 'avatarUrl', 'userAvatar', 'senderAvatar']);
+    const skipKeys = new Set(['avatar', 'headImg', 'headUrl', 'picPath', 'coverPath', 'coverUrl', 'avatarUrl', 'userAvatar', 'senderAvatar',
+      // extInfo/msgExtInfo = 序列化元数据（module/channelRole/user 头像/bubbleId），其中 JSON 字符串会被正则
+      // 捞出头像等非媒体 URL——徐钰涵公式照泄漏主因，一律跳过（真正的媒体在 body/已解析 ext 中另扫）
+      'extInfo', 'msgExtInfo', 'extMsgInfo', 'attachInfo']);
     for (const [key, val] of Object.entries(value)) {
       if (skipKeys.has(key) && typeof val === 'string') continue;
       collectUrls(val, result, depth + 1);
