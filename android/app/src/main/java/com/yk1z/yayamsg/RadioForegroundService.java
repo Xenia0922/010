@@ -8,10 +8,13 @@ import android.app.Service;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.widget.RemoteViews;
 
@@ -46,6 +49,52 @@ public class RadioForegroundService extends Service {
   private long position = 0;
   private long duration = 0;
   private final ExecutorService coverLoader = Executors.newSingleThreadExecutor();
+  // ---- 系统媒体控件（锁屏/厂商媒体中心）进度同步 ----
+  // 系统 MediaStyle 模板的进度/时间来自 MediaSession 的 playbackState，需持续更新；
+  // 本服务每秒本地推进 position 并只写 session state（不重建通知，开销小）。
+  private final Handler progressHandler = new Handler(Looper.getMainLooper());
+  private boolean tickerRunning = false;
+  private final Runnable progressTicker = new Runnable() {
+    @Override
+    public void run() {
+      if (isPlaying) {
+        position += 1000; // 本地时钟推进（JS 每 5s 也会校准一次真实 position）
+        pushSessionState();
+      }
+      if (isPlaying) progressHandler.postDelayed(this, 1000);
+      else tickerRunning = false;
+    }
+  };
+
+  private void startTicker() {
+    if (tickerRunning) return;
+    tickerRunning = true;
+    progressHandler.removeCallbacks(progressTicker);
+    progressHandler.postDelayed(progressTicker, 1000);
+  }
+
+  private void stopTicker() {
+    tickerRunning = false;
+    progressHandler.removeCallbacks(progressTicker);
+  }
+
+  /** 只更新 session 播放状态（系统媒体条进度/锁屏时间据此走），不重建通知 */
+  private void pushSessionState() {
+    if (mediaSession == null) return;
+    try {
+      long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+          | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
+          | (duration > 0 ? PlaybackState.ACTION_SEEK_TO : 0);
+      PlaybackState state = new PlaybackState.Builder()
+          .setActions(actions)
+          .setState(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+              position, 1.0f, System.currentTimeMillis())
+          .build();
+      mediaSession.setPlaybackState(state);
+      mediaSession.setActive(true);
+    } catch (Throwable ignored) {
+    }
+  }
 
   @Override
   public void onCreate() {
@@ -177,6 +226,17 @@ public class RadioForegroundService extends Service {
     PendingIntent nextPi = mediaPi(RadioMediaReceiver.ACTION_NEXT, 12);
     PendingIntent stopPi = mediaPi(RadioMediaReceiver.ACTION_STOP, 13);
 
+    // MediaSession 元数据：标题/歌手/专辑/时长 + 封面（锁屏与各厂商媒体中心取封面/时间用）
+    try {
+      MediaMetadata.Builder md = new MediaMetadata.Builder();
+      md.putString(MediaMetadata.METADATA_KEY_TITLE, (title == null || title.isEmpty()) ? "牙牙消息" : title);
+      md.putString(MediaMetadata.METADATA_KEY_ARTIST, artist == null ? "" : artist);
+      md.putString(MediaMetadata.METADATA_KEY_ALBUM, album == null ? "" : album);
+      if (duration > 0) md.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
+      if (coverBitmap != null) md.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, coverBitmap);
+      mediaSession.setMetadata(md.build());
+    } catch (Throwable ignored) {
+    }
     // MediaSession 播放状态：供锁屏展示进度/可拖拽（duration>0 时允许 seek）
     long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
         | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
@@ -189,6 +249,8 @@ public class RadioForegroundService extends Service {
         .build();
     mediaSession.setPlaybackState(playbackState);
     mediaSession.setActive(true);
+    if (isPlaying) startTicker();
+    else stopTicker();
 
     Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
         ? new Notification.Builder(this, CHANNEL_ID)
@@ -199,6 +261,7 @@ public class RadioForegroundService extends Service {
     builder.setSmallIcon(R.mipmap.ic_launcher)
         .setContentTitle((title == null || title.isEmpty()) ? "牙牙消息" : title)
         .setContentText(text)
+        .setCategory(Notification.CATEGORY_TRANSPORT)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setContentIntent(contentPi)
@@ -238,6 +301,7 @@ public class RadioForegroundService extends Service {
 
   @Override
   public void onDestroy() {
+    stopTicker();
     if (mediaSession != null) {
       mediaSession.setActive(false);
       mediaSession.release();
