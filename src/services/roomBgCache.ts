@@ -48,22 +48,32 @@ async function saveMap(map: BgMap): Promise<void> {
   }
 }
 
+/** 服务端 bgImg 常是相对路径（/backstage/...）→ 补全 source.48.cn 绝对地址，否则 Image 联网加载失败（新房间无背景的根因） */
+function normalizeBg(url: string): string {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `https://source.48.cn${url}`;
+  return `https://source.48.cn/${url}`;
+}
+
 // 同步读取：命中且文件存在则返回本地 uri，否则返回原网络 url（让 Image 正常联网加载）
 export function getBgDisplayUri(url: string): string {
   if (!url) return '';
+  const abs = normalizeBg(url);
   const map = mapCache;
-  if (map && map[url]) {
-    return map[url].localUri;
+  if (map && map[abs]) {
+    return map[abs].localUri;
   }
-  return url;
+  return abs;
 }
 
 // 后台确保缓存：命中且文件存在则什么都不做；否则下载落盘并更新映射。
 // 永远不阻塞 UI —— 调用方拿 getBgDisplayUri 先显示，本函数负责"补齐"本地副本。
 export async function ensureBgCached(url: string): Promise<void> {
   if (!url) return;
+  const abs = normalizeBg(url); // 相对路径统一绝对化后再按绝对地址缓存
   const map = await loadMap();
-  const entry = map[url];
+  const entry = map[abs];
   if (entry) {
     const info = await FileSystem.getInfoAsync(entry.localUri).catch(() => null);
     if (info && info.exists) return; // 已缓存且文件在，无需重下
@@ -71,9 +81,9 @@ export async function ensureBgCached(url: string): Promise<void> {
   // 缓存缺失或文件丢失 → 下载
   try {
     await FileSystem.makeDirectoryAsync(BG_DIR, { intermediates: true }).catch(() => undefined);
-    const localUri = `${BG_DIR}${hashUrl(url)}.img`;
-    await FileSystem.downloadAsync(url, localUri);
-    const next: BgMap = { ...map, [url]: { localUri, url } };
+    const localUri = `${BG_DIR}${hashUrl(abs)}.img`;
+    await FileSystem.downloadAsync(abs, localUri);
+    const next: BgMap = { ...map, [abs]: { localUri, url: abs } };
     // 淘汰：超过上限时删除最旧条目（对象插入顺序 ≈ 写入顺序）
     const keys = Object.keys(next);
     if (keys.length > MAX_ENTRIES) {
