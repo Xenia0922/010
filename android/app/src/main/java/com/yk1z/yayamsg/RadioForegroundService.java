@@ -195,17 +195,15 @@ public class RadioForegroundService extends Service {
     });
   }
 
-  /** 拼 160x160 缩略路径（原图在 www.snh48.com/resize_160x160/attached/... 布局） */
+  /** 拼 160x160 缩略路径：marker 必须插在路径最前（host/resize_160x160/attached/...） */
   private String withThumbMark(String u) {
     try {
       java.net.URI uri = new java.net.URI(u);
       String host = uri.getHost();
       String path = uri.getPath() == null ? "" : uri.getPath();
-      if (path.contains("/resize_160x160")) return u;
-      int idx = path.lastIndexOf('/');
-      String dir = idx > 0 ? path.substring(0, idx) : "";
-      String file = idx >= 0 ? path.substring(idx + 1) : path;
-      return "https://" + host + dir + "/resize_160x160/" + file;
+      if (path.contains("/resize_")) return u; // 已是缩略（任何尺寸）
+      String newPath = (path.startsWith("/") ? "" : "/") + "resize_160x160" + (path.startsWith("/") ? path : "/" + path);
+      return "https://" + host + newPath;
     } catch (Throwable t) {
       return u;
     }
