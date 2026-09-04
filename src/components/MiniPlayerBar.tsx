@@ -97,13 +97,16 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
     const ratio = ratioAt(px);
     if (ratio == null) return;
     heldRef.current = ratio;
+    // 直接写 Animated 值：拇指/进度即时贴手，不做 180ms 补间（那会「追尾拖影」）
+    displayPos.setValue(ratio);
     setHeldRatio(ratio);
   };
   const onProgMove = (px: number) => {
     const ratio = ratioAt(px);
     if (ratio == null) return;
     heldRef.current = ratio;
-    setHeldRatio(ratio);
+    // 移动帧只写 Animated（零 setState → 零重渲染），松手才 seek
+    displayPos.setValue(ratio);
   };
   const onProgRelease = () => {
     const ratio = heldRef.current;
@@ -258,15 +261,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     overflow: 'hidden',
   },
-  progressBar: { height: 22, justifyContent: 'center', paddingHorizontal: 4 },
-  // track/fill/thumb 垂直中心对齐（容器 22、track 3、thumb 12 → 中心 11）
-  progressTrack: { position: 'absolute', left: 4, right: 4, top: 9.5, height: 3, borderRadius: 2 },
-  progressFill: { position: 'absolute', left: 4, right: 4, top: 9.5, height: 3, borderRadius: 2 },
-  progressThumbWrap: { position: 'absolute', left: 4, top: 5, width: 12, height: 12 },
+  progressBar: { height: 28, justifyContent: 'center', paddingHorizontal: 4 },
+  // track/fill/thumb 垂直中心对齐（容器 28、track 3、thumb 14 → 中心 14）
+  progressTrack: { position: 'absolute', left: 4, right: 4, top: 12.5, height: 3, borderRadius: 2 },
+  progressFill: { position: 'absolute', left: 4, right: 4, top: 12.5, height: 3, borderRadius: 2 },
+  progressThumbWrap: { position: 'absolute', left: 4, top: 7, width: 14, height: 14 },
   progressThumb: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     borderWidth: 2,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 4, paddingRight: 4 },

@@ -96,22 +96,38 @@ function FullScreenPlayerInner({
     if (!w || w < 2) return null;
     return Math.max(0, Math.min(1, (pageX - progX2.current) / w));
   };
+  // 拖动跟手优化：move 事件（~60-120Hz）不全量 setState——rAF 限帧 1 次/帧 + 最小跳变 0.4% 才触发渲染，
+  // 视觉仍贴手（全屏页含歌词等高成本子树，逐事件渲染是卡顿源）
+  const progRaf = useRef(0);
+  const pendingRatio = useRef(0);
   const onProgGrant = (e: any) => {
     const r = ratioFromX(e.nativeEvent.pageX);
     if (r == null) { gestureActive.current = false; return; }
     gestureActive.current = true;
+    if (progRaf.current) cancelAnimationFrame(progRaf.current);
+    progRaf.current = 0;
     heldRatioRef.current = null;
     setHeldRatio(null);
     dragRatioRef.current = r;
+    pendingRatio.current = r;
     setDragRatio(r);
   };
   const onProgMove = (e: any) => {
     const r = ratioFromX(e.nativeEvent.pageX);
     if (r == null) return;
-    dragRatioRef.current = r;
-    setDragRatio(r);
+    pendingRatio.current = r;
+    if (progRaf.current) return;
+    progRaf.current = requestAnimationFrame(() => {
+      progRaf.current = 0;
+      const nr = pendingRatio.current;
+      if (Math.abs(nr - dragRatioRef.current) < 0.004) return; // 0.4% 内不重渲染
+      dragRatioRef.current = nr;
+      setDragRatio(nr);
+    });
   };
   const onProgRelease = () => {
+    if (progRaf.current) cancelAnimationFrame(progRaf.current);
+    progRaf.current = 0;
     const r = dragRatioRef.current;
     if (gestureActive.current && duration > 0) {
       useMusicPlayerStore.getState().setSeekTarget(r * duration);
@@ -122,6 +138,7 @@ function FullScreenPlayerInner({
     }
     gestureActive.current = false;
     dragRatioRef.current = 0;
+    pendingRatio.current = 0;
     setDragRatio(null);
   };
   // 播放器追上目标（或 2.5s 超时）后释放保持
