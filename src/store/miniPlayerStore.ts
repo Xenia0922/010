@@ -14,6 +14,8 @@ export interface MiniPlayerInfo {
     playUrl: string;
     playTitle?: string;
     playCover?: string;
+    /** 小窗→大窗续播位置（仅录播；MediaScreen 直接按此 seek） */
+    playPosition?: number;
   };
 }
 

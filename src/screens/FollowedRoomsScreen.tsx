@@ -35,6 +35,7 @@ import { formatTimestamp } from '../utils/format';
 import { findMediaDurationSeconds } from '../utils/mediaDuration';
 import { setPipPlaying } from '../utils/pip';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
+import { usePlayerStore } from '../player/store/playerStore';
 import { useOnMicStore } from '../store/onMicStore';
 import {
   errorMessage,
@@ -1274,13 +1275,24 @@ export default function FollowedRoomsScreen() {
       showToast(t('RTMP 直播请直接全屏观看'));
       return;
     }
+    // 录播转小窗续播：读取当前播放位置（统一播放器 store 实时 position），
+    // 传给小窗做 onLoad seek + backTo 供回大窗 Media 续播（此前写死 0 = 重头放）
+    let pos = 0;
+    if (!cur.isLive) {
+      try {
+        const pst = usePlayerStore.getState();
+        if (pst.source && pst.source.url === cur.url && (pst.state === 'playing' || pst.state === 'paused')) {
+          pos = Math.max(0, Number(pst.position) || 0);
+        }
+      } catch {}
+    }
     useMiniPlayerStore.getState().open({
       url: cur.url,
       title: cur.title,
       cover: cur.cover,
       isLive: !!cur.isLive,
-      position: 0,
-      backTo: { mode: 'vod', playUrl: cur.url, playTitle: cur.title, playCover: cur.cover },
+      position: pos,
+      backTo: { mode: 'vod', playUrl: cur.url, playTitle: cur.title, playCover: cur.cover, playPosition: pos },
     });
     closeRoomPlayer();
   }, [roomPlayer, closeRoomPlayer, showToast, t]);
