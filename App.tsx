@@ -124,6 +124,11 @@ function MusicForegroundBridge() {
           position: st.position,
           duration: st.duration,
         });
+        try {
+          logInfo(`[media] notify start title=${String(track?.title || '').slice(0, 20)} dur=${st.duration} pos=${st.position} cover=${cover ? cover.slice(0, 60) : 'EMPTY'}`, 'media');
+        } catch {}
+      }).catch((err: any) => {
+        try { logInfo(`[media] notify perm rejected: ${String(err && err.message || err).slice(0, 120)}`, 'media'); } catch {}
       });
     } else if (playbackState === 'idle') {
       stopRadioForeground();

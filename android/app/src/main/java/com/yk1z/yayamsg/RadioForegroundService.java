@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 import android.os.PowerManager;
 import android.widget.RemoteViews;
 
@@ -47,6 +48,7 @@ public class RadioForegroundService extends Service {
   private String lyric = "";
   private String coverUrl = "";
   private Bitmap coverBitmap = null;
+  private Bitmap appIconBitmap = null;
   private boolean isPlaying = false;
   private long position = 0;
   private long duration = 0;
@@ -106,7 +108,18 @@ public class RadioForegroundService extends Service {
       wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "yaya:radio");
       wakeLock.setReferenceCounted(false);
     }
+    try {
+      appIconBitmap = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher);
+    } catch (Throwable ignored) {
+    }
     mediaSession = new MediaSession(this, "yaya-media");
+    mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
+    if (Build.VERSION.SDK_INT >= 21) {
+      mediaSession.setPlaybackToLocal(new android.media.AudioAttributes.Builder()
+          .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+          .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+          .build());
+    }
     mediaSession.setCallback(new MediaSession.Callback() {
       @Override
       public void onPlay() {
@@ -154,7 +167,10 @@ public class RadioForegroundService extends Service {
     if (Build.VERSION.SDK_INT >= 29) {
       startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
     } else {
-      startForeground(NOTIFICATION_ID, buildNotification());
+      Log.i("RadioFg", "start: play=" + isPlaying + " posMs=" + position + " durMs=" + duration
+        + " cover=" + (coverUrl == null || coverUrl.isEmpty() ? "EMPTY" : coverUrl)
+        + " title=" + title + " art=" + (coverBitmap != null ? "Y" : "N"));
+    startForeground(NOTIFICATION_ID, buildNotification());
     }
     if (wakeLock != null && !wakeLock.isHeld()) {
       try {
@@ -187,10 +203,15 @@ public class RadioForegroundService extends Service {
           opt.inSampleSize = 2; // 通知小图 256 内，减半解码省内存
           bmp = BitmapFactory.decodeStream(is, null, opt);
         }
-        if (bmp == null) return;
+        if (bmp == null) {
+          Log.i("RadioFg", "cover decode null: " + url);
+          return;
+        }
         coverBitmap = bmp;
+        Log.i("RadioFg", "cover OK size=" + bmp.getWidth() + "x" + bmp.getHeight());
         renotify();
-      } catch (Throwable ignored) {
+      } catch (Throwable t) {
+        Log.i("RadioFg", "cover ERR: " + (t == null ? "" : t.getClass().getSimpleName() + " " + url));
       } finally {
         if (conn != null) {
           try {
@@ -272,6 +293,8 @@ public class RadioForegroundService extends Service {
         : new Notification.Builder(this);
     if (coverBitmap != null) {
       builder.setLargeIcon(coverBitmap);
+    } else if (appIconBitmap != null) {
+      builder.setLargeIcon(appIconBitmap); // 兜底：无封面也显示 app logo（免去系统色块）
     }
     builder.setSmallIcon(R.mipmap.ic_launcher)
         .setContentTitle((title == null || title.isEmpty()) ? "牙牙消息" : title)
