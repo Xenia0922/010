@@ -75,8 +75,16 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
   setInterval(reportProgress, 2000);
 
   // 画面真实可播立即撤掉 loading（flv.play() promise 在部分 WebView 不 resolve → spinner 常驻）
-  video.addEventListener('playing', hideLoading);
-  video.addEventListener('canplay', hideLoading);
+  var startedSent = false;
+  function markStarted() {
+    hideLoading();
+    if (!startedSent && window.ReactNativeWebView) {
+      startedSent = true;
+      try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'started' })); } catch (e) {}
+    }
+  }
+  video.addEventListener('playing', markStarted);
+  video.addEventListener('canplay', markStarted);
   video.addEventListener('error', function() { showError('视频源错误'); });
 
   video.addEventListener('loadedmetadata', function() {

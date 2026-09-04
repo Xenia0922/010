@@ -143,6 +143,9 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
         resumeAt={position > 1 ? position : 0}
         onProgress={handleProgress}
         onEnded={() => setState('paused')}
+        onFirstFrame={() => {
+          if (usePlayerStore.getState().state === 'loading') setState('playing');
+        }}
         onError={(msg) => {
           // 公演默认网页（forceWebOnce）失败 → 自动回退原生一次，避免网页拉不动整场看不了
           const st0 = usePlayerStore.getState();

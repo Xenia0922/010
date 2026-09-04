@@ -10,6 +10,8 @@ interface Props {
   onProgress: (t: number) => void;
   onEnded: () => void;
   onError: (message: string) => void;
+  /** 画面真实开始（撤掉加载转圈；网页无 native firstFrame，靠 html started 消息） */
+  onFirstFrame?: () => void;
 }
 
 export interface WebKernelHandle {
@@ -23,7 +25,7 @@ export interface WebKernelHandle {
  * 控制层经 forwardRef 下发 seek / 倍速（网页内核录播也能拖动与变速）。
  */
 export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
-  { source, resumeAt, onProgress, onEnded, onError },
+  { source, resumeAt, onProgress, onEnded, onError, onFirstFrame },
   ref,
 ) {
   const webRef = useRef<WebView>(null);
@@ -54,6 +56,8 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
           const data = JSON.parse(e.nativeEvent.data);
           if (data.type === 'progress') {
             onProgress(Number(data.time) || 0);
+          } else if (data.type === 'started') {
+            onFirstFrame?.();
           } else if (data.type === 'ended') {
             onEnded();
           } else if (data.type === 'error') {
