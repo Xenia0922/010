@@ -47,6 +47,8 @@ export function PlayerScreen({ source, meta, danmaku = { type: 'none' }, feature
   }, [source.url]);
   useEffect(() => {
     if (dbgState !== 'error' || !onRetry) return;
+    // 网页内核失败（CORS/容器兼容）重解析拿新地址也救不回来 → 不自动循环，保留错误卡手动重试
+    if (usePlayerStore.getState().activeKernel === 'web') return;
     if (autoRetryLeft.current <= 0) return;
     autoRetryLeft.current -= 1;
     try { logInfo(`[player] error → auto re-resolve (fresh url), left=${autoRetryLeft.current}`, 'player.screen'); } catch {}
