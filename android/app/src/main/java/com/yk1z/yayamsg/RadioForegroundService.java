@@ -286,6 +286,10 @@ public class RadioForegroundService extends Service {
         (artist != null && !artist.isEmpty() && album != null && !album.isEmpty()) ? " · " : "",
         album == null || album.isEmpty() ? "" : album).trim();
     String text = subLine.isEmpty() ? "牙牙消息" : subLine;
+    // 实验B：无自定义大视图时，滚动歌词并入折叠文本（牺牲展开样式换标准进度条）
+    if (lyric != null && !lyric.isEmpty() && !text.equals("牙牙消息")) {
+      text = text + " · " + lyric;
+    }
 
     // 点击通知 → 回到 App
     Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
@@ -363,8 +367,9 @@ public class RadioForegroundService extends Service {
         } else {
           big.setViewVisibility(R.id.mc_art, android.view.View.GONE);
         }
-        // OPPO 实测：标准 MediaStyle 布局在该机不显示封面（自定义大视图反而能显示 art+歌词）→ 恢复
-        builder.setCustomBigContentView(big);
+        // 实验B：封面已修(500)前提下重测「去掉自定义大视图」——
+        // 验证 OPPO 进度条 0:00 是否由自定义大视图(无进度条)渲染所致；若 OPPO 恢复进度则永久弃用 RemoteViews(歌词移入 collapsed 文本)
+        // builder.setCustomBigContentView(big);
       } catch (Throwable ignored) {
       }
     }
