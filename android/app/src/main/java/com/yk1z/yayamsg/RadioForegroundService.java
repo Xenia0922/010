@@ -185,24 +185,25 @@ public class RadioForegroundService extends Service {
   private void loadCover(final String url) {
     if (url == null || url.isEmpty()) return;
     coverLoader.execute(() -> {
-      // 0=原图 → 失败回退 1=160x160 缩略（snh48.com resize 服务；保证任意网络下 art 存在）
-      String attemptUrl = url;
-      for (int attempt = 0; attempt < 2; attempt++) {
-        if (tryLoadCoverOnce(attemptUrl)) return;
-        if (attempt == 0) attemptUrl = withThumbMark(url);
+      // 独立三连试：原样 → 强制160 → 强制500（snh48 resize 仅部分规格存在；不因"已是 resize"跳过）
+      String[] tries = { url, variantResize(url, "160x160"), variantResize(url, "500x500") };
+      java.util.LinkedHashSet<String> uniq = new java.util.LinkedHashSet<>();
+      for (String t : tries) if (t != null && !t.isEmpty()) uniq.add(t);
+      for (String t : uniq) {
+        if (tryLoadCoverOnce(t)) return;
       }
       Log.i("RadioFg", "cover ALL FAIL url=" + url);
     });
   }
 
-  /** 拼 160x160 缩略路径：marker 必须插在路径最前（host/resize_160x160/attached/...） */
-  private String withThumbMark(String u) {
+  /** 生成指定尺寸缩略：替换已有 /resize_xxx/ 或插到路径首 */
+  private String variantResize(String u, String size) {
     try {
       java.net.URI uri = new java.net.URI(u);
       String host = uri.getHost();
       String path = uri.getPath() == null ? "" : uri.getPath();
-      if (path.contains("/resize_")) return u; // 已是缩略（任何尺寸）
-      String newPath = (path.startsWith("/") ? "" : "/") + "resize_500x500" + (path.startsWith("/") ? path : "/" + path);
+      String cleaned = path.replaceAll("/resize_[0-9]+x[0-9]+", "");
+      String newPath = (cleaned.startsWith("/") ? "" : "/") + "resize_" + size + (cleaned.startsWith("/") ? cleaned : "/" + cleaned);
       return "https://" + host + newPath;
     } catch (Throwable t) {
       return u;
