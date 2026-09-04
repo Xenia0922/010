@@ -84,8 +84,14 @@ function normalizePriceList(res: any): FlipPriceConfig[] {
   ]);
 
   const source = list.length ? list : res?.content?.customs ? [res.content.customs] : [];
+  // ⚠️ 修复：customs 是「配置对象数组」时须原样保留；只有 customs 是「{type:{cfg}} 对象表」才展开 values。
+  // 旧实现把对象拆成 数值数组(1,725,88...) → answerType 全丢 → filter 后恒空 → "未开通/不显示"。
   return source
-    .flatMap((item: any) => (Array.isArray(item) ? item : Object.keys(item).map((k) => item[k])))
+    .flatMap((item: any) => {
+      if (Array.isArray(item)) return item;
+      const vals = Object.values(item);
+      return vals.every((v) => v && typeof v === 'object') ? vals : [item];
+    })
     .map((item: any) => {
       const fallbackCost = toNumber(item?.price ?? item?.cost ?? item?.normalCost);
       return {
