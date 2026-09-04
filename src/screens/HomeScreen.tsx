@@ -740,7 +740,7 @@ export default function HomeScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    <Pill label={resumeLabel} accent onPress={handleResumeMusic} />
+                    <Pill label={resumeLabel} accent onPress={handleResumeMusic} style={{ alignSelf: 'center' }} />
                   </View>
                 </GlassCard>
               </ScalePressable>
