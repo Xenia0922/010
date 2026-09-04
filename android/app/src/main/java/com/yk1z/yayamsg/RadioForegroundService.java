@@ -267,6 +267,8 @@ public class RadioForegroundService extends Service {
         .setContentTitle((title == null || title.isEmpty()) ? "牙牙消息" : title)
         .setContentText(text)
         .setCategory(Notification.CATEGORY_TRANSPORT)
+        // 公开可见性：锁屏/安全锁下仍显示封面与控件（部分厂商默认 private 会藏内容→看似无封面/无进度）
+        .setVisibility(Notification.VISIBILITY_PUBLIC)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setContentIntent(contentPi)
