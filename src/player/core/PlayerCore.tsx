@@ -23,6 +23,9 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const webRef = useRef<WebKernelHandle>(null);
   /** 诊断去重：记录上次已打日志的内核|源（⚠️ 必须放所有条件 return 之前——Hook 铁律） */
   const lastLogged = useRef('');
+  // 公演默认网页失败→原生 的自动回退标记（按源复位）
+  const webFallbackDone = useRef(false);
+  const sourceChangedRef = useRef('');
 
   const setState = usePlayerStore((s) => s.setState);
   const setPosition = usePlayerStore((s) => s.setPosition);
@@ -119,6 +122,11 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
   const kernel = useWebKernel ? 'web' : activeKernel;
 
   if (!source || !source.url) return null;
+  // 自动回退标记按源复位（source 已判非空）
+  if (webFallbackDone.current !== false && sourceChangedRef.current !== source.url) {
+    sourceChangedRef.current = source.url;
+    webFallbackDone.current = false;
+  }
 
   const paused = state !== 'playing';
   // 诊断：每次开播记录所选内核与源（runtimeLog；非 hook，可放 return 后）
@@ -135,7 +143,17 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
         resumeAt={position > 1 ? position : 0}
         onProgress={handleProgress}
         onEnded={() => setState('paused')}
-        onError={kernelError}
+        onError={(msg) => {
+          // 公演默认网页（forceWebOnce）失败 → 自动回退原生一次，避免网页拉不动整场看不了
+          const st0 = usePlayerStore.getState();
+          if (st0.forceWebOnce && !webFallbackDone.current) {
+            webFallbackDone.current = true;
+            st0.setForceWebOnce(false);
+            st0.setUseWebKernel(false);
+            return;
+          }
+          kernelError(msg);
+        }}
       />
     );
   }

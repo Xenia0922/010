@@ -1,4 +1,4 @@
-export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime?: number, showControls = true): string {
+export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime?: number, showControls = true, extraHeaders: Record<string, string> = {}): string {
   const poster = posterUrl || '';
   const startTime = Number.isFinite(initialTime) && (initialTime as number) > 0 ? (initialTime as number) : 0;
   // 直播流不挂原生 controls：HTML5 播放条上的进度条/预览对直播无意义且遮挡画面
@@ -19,7 +19,7 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
   #error{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ff4444;font-size:13px;font-family:sans-serif;text-align:center;padding:16px;line-height:1.6}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.0/dist/hls.min.js"></script>
 </head>
 <body>
@@ -47,6 +47,16 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
   }
 
   var startTime = ${JSON.stringify(startTime)};
+  var EXTRA_HEADERS = ${JSON.stringify(extraHeaders || {})};
+  // 请求级防盗链头（B站流必需；flv/hls 的 XHR 都经它补头）
+  function applyHeaders(xhr) {
+    try {
+      for (var k in EXTRA_HEADERS) {
+        if (EXTRA_HEADERS.hasOwnProperty(k)) xhr.setRequestHeader(k, EXTRA_HEADERS[k]);
+      }
+    } catch (e) {}
+  }
+  function makeXhrSetup() { return function(xhr) { applyHeaders(xhr); }; }
 
   // 续播位置回传：定期 + 暂停时上报当前进度（由 RN 侧落盘）
   function reportProgress() {
@@ -105,7 +115,7 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
   try {
     if (ext.endsWith('.m3u8') || url.indexOf('m3u8') > -1 || url.indexOf('.ts') > -1) {
       if (window.Hls && Hls.isSupported()) {
-        var hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        var hls = new Hls({ enableWorker: true, lowLatencyMode: false, xhrSetup: makeXhrSetup() });
         hls.loadSource(url);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, function() {
@@ -122,15 +132,16 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
         tryNative();
       }
     } else if (ext.endsWith('.flv') || url.indexOf('flv') > -1) {
-      if (window.flvjs && flvjs.isSupported()) {
-        var flv = flvjs.createPlayer({
+      if (window.mpegts && mpegts.isSupported()) {
+        var flv = mpegts.createPlayer({
           type: 'flv',
           url: url,
           isLive: true,
           hasAudio: true,
           hasVideo: true,
           enableStashBuffer: false,
-          stashInitialSize: 128
+          stashInitialSize: 128,
+          xhrSetup: makeXhrSetup()
         });
         flv.attachMediaElement(video);
         flv.load();
@@ -139,7 +150,7 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
         }).catch(function(e) {
           showError('FLV 播放失败: ' + e.message);
         });
-        flv.on(flvjs.Events.ERROR, function() {
+        flv.on(mpegts.Events.ERROR, function() {
           showError('FLV 加载失败');
           flv.destroy();
         });

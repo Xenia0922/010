@@ -25,6 +25,8 @@ interface PlayerState {
   controlsVisible: boolean;
   fullscreen: boolean;
   useWebKernel: boolean;
+  /** 本次开播是否因「公演默认网页」自动进入 web：web 失败时回退原生一次（防整场看不了） */
+  forceWebOnce: boolean;
   // 渲染内核（由 PlayerCore 上报）
   activeKernel: 'native' | 'exo' | 'web';
   // 画质（B站）
@@ -51,6 +53,7 @@ interface PlayerState {
   toggleControls: (visible?: boolean) => void;
   setFullscreen: (v: boolean) => void;
   setUseWebKernel: (v: boolean) => void;
+  setForceWebOnce: (v: boolean) => void;
   setActiveKernel: (k: PlayerState['activeKernel']) => void;
   setQualityQn: (qn: number | null) => void;
   setRate: (r: number) => void;
@@ -92,6 +95,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   controlsVisible: true,
   fullscreen: false,
   useWebKernel: false,
+  forceWebOnce: false,
   activeKernel: 'native',
   qualityQn: null,
   rate: 1,
@@ -114,6 +118,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         controlsVisible: true,
         fullscreen: false,
         useWebKernel: false,
+        forceWebOnce: false,
         activeKernel: kernelForSource(source),
         qualityQn: null,
         rate: 1,
@@ -147,6 +152,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   toggleControls: (visible) => set((s) => ({ controlsVisible: visible === undefined ? !s.controlsVisible : visible })),
   setFullscreen: (fullscreen) => set({ fullscreen }),
   setUseWebKernel: (useWebKernel) => set({ useWebKernel }),
+  setForceWebOnce: (forceWebOnce) => set({ forceWebOnce }),
   setActiveKernel: (activeKernel) => set({ activeKernel }),
   setQualityQn: (qualityQn) => set({ qualityQn }),
   setRate: (rate) => set({ rate }),

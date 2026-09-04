@@ -40,7 +40,7 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
   return (
     <WebView
       ref={webRef}
-      source={{ html: getPlayerHtml(source.url, undefined, resumeAt || 0, source.kind !== 'live') }}
+      source={{ html: getPlayerHtml(source.url, undefined, resumeAt || 0, source.kind !== 'live', (source.headers || {}) as any) }}
       style={StyleSheet.absoluteFill}
       javaScriptEnabled
       domStorageEnabled
