@@ -65,6 +65,7 @@ public class RadioForegroundService extends Service {
       if (isPlaying) {
         position += 1000; // 本地时钟推进（JS 每 5s 也会校准一次真实 position）
         pushSessionState();
+        renotify(); // 大视图内进度条/时间随 tick 滚动（OPPO 系统卡不吃会话进度时的兜底）
       }
       if (isPlaying) progressHandler.postDelayed(this, 1000);
       else tickerRunning = false;
@@ -84,6 +85,11 @@ public class RadioForegroundService extends Service {
   }
 
   /** 只更新 session 播放状态（系统媒体条进度/锁屏时间据此走），不重建通知 */
+  private String fmt(int sec) {
+    if (sec < 0) sec = 0;
+    return String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60);
+  }
+
   private void pushSessionState() {
     if (mediaSession == null) return;
     try {
@@ -431,9 +437,16 @@ public class RadioForegroundService extends Service {
         } else {
           big.setViewVisibility(R.id.mc_art, android.view.View.GONE);
         }
-        // 实验B：封面已修(500)前提下重测「去掉自定义大视图」——
-        // 验证 OPPO 进度条 0:00 是否由自定义大视图(无进度条)渲染所致；若 OPPO 恢复进度则永久弃用 RemoteViews(歌词移入 collapsed 文本)
-        // builder.setCustomBigContentView(big);
+        // 自带进度条的大视图（OPPO 系统媒体卡不刷新会话进度时的可见兜底）
+        try {
+          int durS = (int) (duration / 1000);
+          int posS = (int) (position / 1000);
+          big.setProgressBar(R.id.mc_prog, 1000, Math.max(0, Math.min(1000, posS * 1000 / Math.max(durS, 1))), false);
+          big.setTextViewText(R.id.mc_pos, fmt(posS));
+          big.setTextViewText(R.id.mc_total, fmt(durS));
+        } catch (Throwable ignored) {
+        }
+        builder.setCustomBigContentView(big);
       } catch (Throwable ignored) {
       }
     }
