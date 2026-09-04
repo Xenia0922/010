@@ -39,12 +39,18 @@ public class RadioServiceModule extends ReactContextBaseJavaModule {
     emitControl(context, "stop");
   }
 
-  /** 媒体控制按钮被点击：通知 JS 执行对应动作（play_pause/prev/next/stop） */
+  /** 媒体控制按钮被点击：通知 JS 执行对应动作（play_pause/prev/next/stop/seek） */
   public static void emitControl(Context context, String action) {
+    emitControlWithValue(context, action, 0);
+  }
+
+  /** 带数值的控制事件（如系统媒体条 seek → value = 目标毫秒） */
+  public static void emitControlWithValue(Context context, String action, double value) {
     ReactApplicationContext reactContext = contextRef == null ? null : contextRef.get();
     if (reactContext == null || !reactContext.hasActiveCatalystInstance()) return;
     WritableMap payload = Arguments.createMap();
     payload.putString("action", action);
+    payload.putDouble("value", value);
     reactContext
         .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
         .emit("RadioControlRequested", payload);

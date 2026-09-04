@@ -104,7 +104,11 @@ function MusicForegroundBridge() {
       const now = Date.now();
       if (now - lastNotify.current < 5000 && track?.title) return;
       lastNotify.current = now;
-      const cover = String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
+      let cover = String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
+      // 相对路径补全为绝对地址（source.48.cn），否则通知封面下载失败 → 系统控件无图
+      if (cover && !/^https?:\/\//i.test(cover)) {
+        cover = `https://source.48.cn${cover.startsWith('/') ? cover : '/' + cover}`;
+      }
       const artistText = String((track as any)?.artist || (track as any)?.groupLabel || '');
       const albumText = String((track as any)?.album || '');
       const lyrIdx = currentLyricIndex(st.lyrics, st.position);
@@ -152,12 +156,15 @@ function MusicForegroundBridge() {
     }
   }), []);
   // 通知栏媒体控制（播放/暂停、上一首、下一首）→ 驱动 MusicEngine
-  useEffect(() => onRadioControlRequested((action) => {
+  useEffect(() => onRadioControlRequested((action, value) => {
     const st = useMusicPlayerStore.getState();
     if (action === 'play_pause') {
       if (st.playbackState === 'playing') st.setPlaybackState('paused');
       else if (st.playbackState === 'paused') MusicEngine.resume();
       else if (!st.queue.length) return;
+    } else if (action === 'seek' && value) {
+      // 系统媒体条拖动 seek（value=毫秒）→ 交给 MusicEngine（消费后清 seekTarget）
+      st.setSeekTarget(Math.max(0, Number(value) / 1000));
     } else if (action === 'next') {
       MusicEngine.next();
     } else if (action === 'prev') {

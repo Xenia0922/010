@@ -122,6 +122,11 @@ public class RadioForegroundService extends Service {
       public void onSkipToPrevious() {
         RadioServiceModule.emitControl(getApplicationContext(), "prev");
       }
+      @Override
+      public void onSeekTo(long pos) {
+        // 系统媒体条拖动：通知 JS seek（value=毫秒）
+        RadioServiceModule.emitControlWithValue(getApplicationContext(), "seek", (double) pos);
+      }
     });
   }
 

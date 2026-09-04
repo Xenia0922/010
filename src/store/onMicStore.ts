@@ -155,6 +155,9 @@ export const useOnMicStore = create<OnMicState>((set, get) => ({
       // 小房间补测只在小扫描（关注成员等 ≤40 位）里做：大批量（如全量 529 人）做的话
       // 每个静默成员都多打一次接口，请求量翻倍拖慢扫描。关注成员仍由房间页小扫描覆盖。
       const enableSmallFallback = opts.smallFallback ?? candidates.length <= 40;
+      // 成功探测集合：仅「本次请求成功且确认未上麦」的成员才允许从列表移除；
+      // 请求失败（网络/超时/未登录）的成员保留旧状态——避免一次网络抖动整列被清空（"加载不出上麦列表"根因）
+      const okIds = new Set<string>();
       let cursor = 0;
       const worker = async () => {
         while (cursor < candidates.length) {
@@ -168,8 +171,9 @@ export const useOnMicStore = create<OnMicState>((set, get) => ({
               knownServerId: m.serverId,
             });
             if (!room.channelId || room.channelId === '0' || room.channelId === 'undefined') {
+              okIds.add(m.memberId);
               probedAt[m.memberId] = Date.now();
-              continue; // 实在拿不到大房间 channelId 的成员跳过
+              continue; // 实在拿不到大房间 channelId 的成员跳过（成功判定：本次确无结果）
             }
             const res: any = await pocketApi.operateRoomVoice({ channelId: room.channelId, serverId: room.serverId });
             const content = res?.content || (res?.data && res.data.content) || {};
@@ -221,8 +225,9 @@ export const useOnMicStore = create<OnMicState>((set, get) => ({
                 logInfo(`[onMic] ${m.name} 上麦中：radio=${hasRadio} 在麦=${onMicCount} ch=${room.channelId} srv=${room.serverId}`, 'onMic');
               }
             }
+            okIds.add(m.memberId);
           } catch {
-            // 单个成员查询失败（未登录 / 无权限 / 网络）忽略，不阻断整体扫描
+            // 单个成员查询失败（未登录 / 无权限 / 网络）忽略，不阻断整体扫描；不进 okIds → 列表保留其旧状态
           } finally {
             probedAt[m.memberId] = Date.now();
             set((s) => ({ done: s.done + 1 }));
@@ -236,7 +241,8 @@ export const useOnMicStore = create<OnMicState>((set, get) => ({
       set((s) => {
         const next: Record<string, OnMicEntry> = { ...s.onMic };
         const scannedIds = new Set(candidates.map((m) => m.memberId));
-        scannedIds.forEach((id) => { if (!(id in updates)) delete next[id]; });
+        // 仅移除「成功确认未上麦」的成员；失败的保留（防误清）
+        scannedIds.forEach((id) => { if (okIds.has(id) && !(id in updates)) delete next[id]; });
         Object.assign(next, updates);
         return {
           onMic: next,
