@@ -160,7 +160,14 @@ public class RadioForegroundService extends Service {
         String nextCover = intent.getStringExtra("cover") == null ? "" : intent.getStringExtra("cover");
         if (!nextCover.equals(coverUrl)) {
           coverUrl = nextCover;
-          if (coverUrl.startsWith("data:image")) {
+          if (coverUrl.startsWith("file://")) {
+            // 本地文件（RN 下载）：decodeFile 同步，最稳路径
+            try {
+              coverBitmap = BitmapFactory.decodeFile(coverUrl.replace("file://", ""));
+            } catch (Throwable ignored) {
+              coverBitmap = null;
+            }
+          } else if (coverUrl.startsWith("data:image")) {
             // dataURI 同步解码：buildNotification 当次即带封面（避免异步 renotify 时序/丢失）
             coverBitmap = decodeDataUri(coverUrl);
           } else {

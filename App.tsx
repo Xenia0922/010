@@ -18,6 +18,7 @@ import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
 import { NOTICE_URL } from './src/constants';
 import { initRuntimeLog, logCrash, logInfo } from './src/utils/runtimeLog';
+import * as FileSystem from 'expo-file-system/legacy';
 import { usePalette } from './src/theme/colors';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { useSafeAreaInsets } from './src/hooks/useSafeAreaInsets';
@@ -64,35 +65,50 @@ function installGlobalErrorHandler() {
   });
 }
 
-// 封面转 dataURI：绕开部分 ROM(OPPO ColorOS) Java 侧联网拉封面失败的问题；
-// RN fetch 在音乐库已证明可加载该图。按 URL 缓存避免 5s 重复下载。
+// 封面落盘为本地文件：RN 侧下载（有 UA/网络栈与音乐库同源可加载）→ file:// 给服务 decodeFile，
+// 绕开 OPPO ColorOS 对 Java 侧联网/dataURI 的兼容问题。按 URL 缓存避免 5s 重复下载。
 const coverDataCache = new Map<string, string>();
-function fetchCoverAsData(coverUrl: string, timeoutMs = 7000): Promise<string> {
-  if (!coverUrl) return Promise.resolve('');
-  if (coverUrl.startsWith('data:')) return Promise.resolve(coverUrl);
+let coverDirReady: Promise<boolean> | null = null;
+function ensureCoverDir(): Promise<boolean> {
+  if (!coverDirReady) {
+    coverDirReady = (async () => {
+      try {
+        const dir = `${FileSystem.cacheDirectory || ''}cover/`;
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return coverDirReady;
+}
+function coverFileFor(url: string): string {
+  let h = 0;
+  for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) >>> 0;
+  const ext = /\.png([?#]|$)/i.test(url) ? 'png' : 'jpg';
+  return `${FileSystem.cacheDirectory || ''}cover/notif_${h.toString(36)}.${ext}`;
+}
+async function fetchCoverToFile(coverUrl: string): Promise<string> {
+  if (!coverUrl) return '';
+  if (coverUrl.startsWith('file://') || coverUrl.startsWith('data:')) return coverUrl;
   const hit = coverDataCache.get(coverUrl);
-  if (hit) return Promise.resolve(hit);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(coverUrl), timeoutMs);
-    fetch(coverUrl)
-      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('http' + r.status))))
-      .then((blob: any) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          clearTimeout(timer);
-          const data = String(reader.result || '');
-          if (data.startsWith('data:')) {
-            coverDataCache.set(coverUrl, data);
-            resolve(data);
-          } else {
-            resolve(coverUrl);
-          }
-        };
-        reader.onerror = () => { clearTimeout(timer); resolve(coverUrl); };
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => { clearTimeout(timer); resolve(coverUrl); });
-  });
+  if (hit) return hit;
+  try {
+    await ensureCoverDir();
+    const local = coverFileFor(coverUrl);
+    const res: any = await Promise.race([
+      FileSystem.downloadAsync(coverUrl, local),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('cover timeout')), 7000)),
+    ]);
+    if (res && (res.status === 200 || res.status === undefined)) {
+      coverDataCache.set(coverUrl, local);
+      return local;
+    }
+  } catch {
+    // 下载失败：降级原 URL（服务端仍有单流网络回退 + 160/500 链）
+  }
+  return coverUrl;
 }
 
 installGlobalErrorHandler();
@@ -149,7 +165,7 @@ function MusicForegroundBridge() {
       const lyrIdx = currentLyricIndex(st.lyrics, st.position);
       const lyricText = lyrIdx >= 0 && st.lyrics[lyrIdx] ? st.lyrics[lyrIdx].text : '';
       ensureNotificationPermission().then(async () => {
-        const finalCover = await fetchCoverAsData(cover);
+        const finalCover = await fetchCoverToFile(cover);
         startRadioForeground({
           title: track?.title || '音乐',
           cover: finalCover,
