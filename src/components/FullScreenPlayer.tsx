@@ -183,13 +183,25 @@ function FullScreenPlayerInner({
 
   useEffect(() => {
     if (lrcIdx < 0 || !showLyrics || !lyricScrollRef.current) return;
-    const y = lineYOffsets.current[lrcIdx] ?? 0;
+    // 切到歌词页时行 onLayout 尚未完成 → offset 全 0 → 首次居中到顶部，等下一句才纠正（体验=等好久）。
+    // 自愈轮询：60ms 重试直到当前行 y 就绪（≤1s），随后精确居中；后续句子切换直接命中已就绪 offset。
     const lineH = lyricSize * 1.6 + 16;
-    const timer = setTimeout(() => {
-      const target = Math.max(0, y - lrcScrollH.current / 2 + lineH / 2);
-      lyricScrollRef.current?.scrollTo?.({ y: target, animated: true });
-    }, 30);
-    return () => clearTimeout(timer);
+    let tries = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const center = () => {
+      const y = lineYOffsets.current[lrcIdx] ?? 0;
+      if (y > 0 || tries >= 16) {
+        if (y > 0) {
+          const target = Math.max(0, y - lrcScrollH.current / 2 + lineH / 2);
+          lyricScrollRef.current?.scrollTo?.({ y: target, animated: true });
+        }
+        return;
+      }
+      tries += 1;
+      timer = setTimeout(center, 60);
+    };
+    timer = setTimeout(center, 30);
+    return () => { if (timer) clearTimeout(timer); };
   }, [lrcIdx, showLyrics, lyricSize, lyrics]);
 
   const iconSecondary = palette.labelSecondary;
