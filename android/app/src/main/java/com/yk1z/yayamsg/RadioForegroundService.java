@@ -160,8 +160,13 @@ public class RadioForegroundService extends Service {
         String nextCover = intent.getStringExtra("cover") == null ? "" : intent.getStringExtra("cover");
         if (!nextCover.equals(coverUrl)) {
           coverUrl = nextCover;
-          coverBitmap = null; // 换歌/换封面：清旧图（buildNotification 会先无图刷新一次）
-          loadCover(coverUrl);
+          if (coverUrl.startsWith("data:image")) {
+            // dataURI 同步解码：buildNotification 当次即带封面（避免异步 renotify 时序/丢失）
+            coverBitmap = decodeDataUri(coverUrl);
+          } else {
+            coverBitmap = null;
+          }
+          if (coverBitmap == null && !coverUrl.isEmpty()) loadCover(coverUrl);
         }
       }
     }
@@ -227,6 +232,28 @@ public class RadioForegroundService extends Service {
       return "https://" + host + newPath;
     } catch (Throwable t) {
       return u;
+    }
+  }
+
+  /** 同步解码 data:image URI（RN 拉取→base64） */
+  private Bitmap decodeDataUri(String u) {
+    try {
+      if (u == null || !u.startsWith("data:image")) return null;
+      int comma = u.indexOf(',');
+      String b64 = comma >= 0 ? u.substring(comma + 1) : u;
+      byte[] bytes = null;
+      int[] flags = { Base64.DEFAULT, Base64.NO_WRAP, Base64.NO_PADDING | Base64.NO_WRAP };
+      for (int f : flags) {
+        try {
+          bytes = Base64.decode(b64, f);
+          if (bytes != null && bytes.length > 0) break;
+        } catch (Throwable ignored) {
+        }
+      }
+      if (bytes == null || bytes.length == 0) return null;
+      return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+    } catch (Throwable t) {
+      return null;
     }
   }
 
