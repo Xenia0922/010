@@ -198,9 +198,16 @@ public class RadioForegroundService extends Service {
         int code = conn.getResponseCode();
         if (code / 100 != 2) return;
         Bitmap bmp;
+        // 先读尺寸，仅超长边 > 1024 才降采样（锁屏封面要清晰；不再固定减半导致 80px 糊）
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream is0 = conn.getInputStream()) {
+          BitmapFactory.decodeStream(is0, null, bounds);
+        }
         try (InputStream is = conn.getInputStream()) {
           BitmapFactory.Options opt = new BitmapFactory.Options();
-          opt.inSampleSize = 2; // 通知小图 256 内，减半解码省内存
+          int longest = Math.max(bounds.outWidth, bounds.outHeight);
+          opt.inSampleSize = longest > 1024 ? (int) Math.pow(2, Math.ceil(Math.log(longest / 1024.0) / Math.log(2))) : 1;
           bmp = BitmapFactory.decodeStream(is, null, opt);
         }
         if (bmp == null) {
