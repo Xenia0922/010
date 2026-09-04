@@ -107,8 +107,8 @@ android {
         // minSdk 26（Android 8）：兜底兼容 HarmonyOS 2/3/4 全系（基座 Android 8-10）及更老 Android 机型
         minSdkVersion Math.max(rootProject.ext.minSdkVersion as int, 26)
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2073009
-        versionName "2.7.3"
+        versionCode 2074008
+        versionName "2.7.4"
 
         // 真机架构 + 模拟器架构。MuMu 等安卓模拟器为 x86_64，缺此 ABI 会导致 libhermes 等原生库
         // 无法加载（UnsatisfiedLinkError），表现为「启动即闪退进不去」。为兼容模拟器测试必须保留。
