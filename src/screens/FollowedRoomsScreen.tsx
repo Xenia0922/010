@@ -1183,6 +1183,13 @@ export default function FollowedRoomsScreen() {
     setPipPlaying(!!roomPlayer && !roomPlayerFullscreen);
   }, [roomPlayer, roomPlayerFullscreen]);
   const [rankVisible, setRankVisible] = useState(false);
+  // 房间直播送礼（与 Media 页同 API；roomPlayer 面板此前漏接）
+  const [giftVisible, setGiftVisible] = useState(false);
+  const [giftStatus, setGiftStatus] = useState('');
+  const [giftBalance, setGiftBalance] = useState('');
+  const [giftList, setGiftList] = useState<any[]>([]);
+  const [giftSel, setGiftSel] = useState<any>(null);
+  const [giftNum, setGiftNum] = useState(1);
   const [rankRows, setRankRows] = useState<any[]>([]);
   const [rankStatus, setRankStatus] = useState('');
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
@@ -1263,6 +1270,59 @@ export default function FollowedRoomsScreen() {
   }, [selectedRoom, setTabBarHidden]);
 
   // 应用内小窗：房间播放器交棒给悬浮小窗
+  const openRoomGiftPanel = useCallback(async () => {
+    if (!roomPlayer?.liveId) {
+      setGiftStatus(t('当前直播缺少 liveId，不能送礼'));
+      setGiftVisible(true);
+      return;
+    }
+    setGiftVisible(true);
+    setGiftStatus('');
+    setGiftSel(null);
+    setGiftNum(1);
+    try {
+      const [giftRes, moneyRes] = await Promise.all([
+        pocketApi.getGiftList(String(roomPlayer.liveId)).catch(() => null),
+        pocketApi.getUserMoney().catch(() => null),
+      ]);
+      const rawGifts = (giftRes as any)?.content?.gifts || (giftRes as any)?.content?.giftList
+        || (giftRes as any)?.data?.gifts || (giftRes as any)?.data?.giftList || (giftRes as any)?.content?.list || [];
+      const gifts = Array.isArray(rawGifts) ? rawGifts : [];
+      setGiftList(gifts);
+      const money = moneyRes?.content?.moneyTotal ?? moneyRes?.data?.moneyTotal ?? '';
+      if (money !== '' && money !== undefined && money !== null) setGiftBalance(String(money));
+      setGiftStatus(gifts.length ? t('已加载 {count} 个礼物', { count: gifts.length }) : t('礼物列表为空'));
+    } catch (err) {
+      setGiftList([]);
+      setGiftStatus(t('加载礼物失败：{error}', { error: errorMessage(err) }));
+    }
+  }, [roomPlayer, t]);
+
+  const sendRoomGift = useCallback(async () => {
+    if (!roomPlayer || !giftSel) {
+      setGiftStatus(t('请先选择礼物'));
+      return;
+    }
+    const num = Math.max(1, Math.floor(Number(giftNum) || 1));
+    // 主播 = 房间主人（member.id）；礼物入账到主播账号
+    const ownerId = String((selectedRoom as any)?.id || '');
+    const liveId = String(roomPlayer.liveId || '');
+    setGiftStatus(t('正在发送...'));
+    try {
+      await pocketApi.sendGift({
+        giftId: String(giftSel.giftId || giftSel.id),
+        liveId,
+        acceptUserId: ownerId,
+        giftNum: num,
+      });
+      setGiftStatus(t('已送出 {num} 个 {giftName}', { num, giftName: String(giftSel.giftName || giftSel.name || '') }));
+      const money = await pocketApi.getUserMoney().catch(() => null);
+      if (money?.content?.moneyTotal !== undefined) setGiftBalance(String(money.content.moneyTotal));
+    } catch (err) {
+      setGiftStatus(t('送礼失败：{error}', { error: errorMessage(err) }));
+    }
+  }, [roomPlayer, selectedRoom, giftSel, giftNum, t]);
+
   const handleRoomMiniPlayer = useCallback(() => {
     const cur = roomPlayer;
     if (!cur?.url) return;
@@ -2137,6 +2197,9 @@ export default function FollowedRoomsScreen() {
               meta={{ title: roomPlayer.title, cover: roomPlayer.cover }}
               features={{ kernelSwitch: true, rate: !roomPlayer.isLive }}
               extraActions={[
+                ...(roomPlayer.isLive
+                  ? [{ key: 'gift', icon: 'gift', label: t('礼物'), onPress: () => openRoomGiftPanel() }]
+                  : []),
                 { key: 'pip', icon: 'picture-in-picture-bottom-right-outline', label: t('小窗'), onPress: handleRoomMiniPlayer },
                 { key: 'rank', icon: 'trophy', label: t('贡献榜'), onPress: openRoomRankPanel },
               ]}
@@ -2182,6 +2245,62 @@ export default function FollowedRoomsScreen() {
                       });
                     })()}
                   </ScrollView>
+                </View>
+              </View>
+            </Modal>
+            <Modal visible={giftVisible} transparent animationType="slide" onRequestClose={() => setGiftVisible(false)}>
+              <View style={styles.roomModalShade}>
+                <View style={[styles.roomRankPanel, { backgroundColor: palette.surface }]}>
+                  <View style={styles.roomRankHandleWrap}>
+                    <View style={[styles.roomRankHandle, { backgroundColor: palette.fill3 }]} />
+                  </View>
+                  <View style={styles.roomRankHeader}>
+                    <Text style={[styles.roomRankTitle, { color: palette.label }]}>{t('直播送礼')}</Text>
+                    <ScalePressable onPress={() => setGiftVisible(false)} pressedScale={0.92} activeOpacity={0.8} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <View style={[styles.roomRankClose, { backgroundColor: palette.fill2 }]}>
+                        <MaterialCommunityIcons name="close" color={palette.labelSecondary} size={18} />
+                      </View>
+                    </ScalePressable>
+                  </View>
+                  <Text style={[styles.roomRankStatus, { color: palette.danger }]}>{t('直播送礼主播看不到赠送，仅能统计贡献值')}</Text>
+                  <Text style={[styles.roomRankStatus, { color: palette.labelSecondary }]}>
+                    {giftBalance ? `${t('余额：{balance} 鸡腿', { balance: giftBalance })} · ` : ''}{giftStatus}
+                  </Text>
+                  <ScrollView style={styles.roomRankList} showsVerticalScrollIndicator={false}>
+                    {giftList.map((g, index) => {
+                      const gid = String(g.giftId || g.id || '');
+                      const gname = String(g.giftName || g.name || t('礼物 {n}', { n: index + 1 }));
+                      const cost = g.cost ?? g.price ?? g.money ?? 0;
+                      return (
+                        <TouchableOpacity
+                          key={gid || index}
+                          style={[styles.roomRankRow, { borderBottomColor: palette.hairline, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                          onPress={() => { setGiftSel(g); setGiftNum(1); }}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={[styles.roomRankName, { color: palette.label, flex: 1 }]} numberOfLines={1}>{gname}</Text>
+                          {Number(cost) > 0 ? (
+                            <Text style={[styles.roomRankValue, { color: palette.labelSecondary }]}>{t('{cost} 鸡腿/个', { cost })}</Text>
+                          ) : null}
+                          {giftSel && String(giftSel.giftId || giftSel.id || '') === gid ? <MaterialCommunityIcons name="check-circle" color={palette.tint} size={18} /> : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <ScalePressable style={[styles.liveResolveBtnGhost, { paddingHorizontal: 12, paddingVertical: 6 }]} pressedScale={0.92} activeOpacity={0.8} onPress={() => setGiftNum((n) => Math.max(1, n - 1))}>
+                        <Text style={[styles.liveResolveBtnGhostText, { color: palette.tint }]}>−</Text>
+                      </ScalePressable>
+                      <Text style={[styles.roomRankTitle, { color: palette.label }]}>{giftNum}</Text>
+                      <ScalePressable style={[styles.liveResolveBtnGhost, { paddingHorizontal: 12, paddingVertical: 6 }]} pressedScale={0.92} activeOpacity={0.8} onPress={() => setGiftNum((n) => Math.min(999, n + 1))}>
+                        <Text style={[styles.liveResolveBtnGhostText, { color: palette.tint }]}>＋</Text>
+                      </ScalePressable>
+                    </View>
+                    <ScalePressable style={[styles.liveResolveBtn, { backgroundColor: '#ff6f91', paddingHorizontal: 18, paddingVertical: 8 }]} pressedScale={0.95} activeOpacity={0.85} onPress={sendRoomGift}>
+                      <Text style={styles.liveResolveBtnText}>{t('发送')}</Text>
+                    </ScalePressable>
+                  </View>
                 </View>
               </View>
             </Modal>
