@@ -260,7 +260,6 @@ export default function FlipScreen() {
     }
     try {
       const res = await pocketApi.getFlipPrices(member.id);
-      try { console.warn('[flipPrice] RAW=' + JSON.stringify(res).slice(0, 900)); } catch {}
       const list = normalizePriceList(res);
       setPrices(list);
       setAnswerType(list[0]?.answerType ?? null);
