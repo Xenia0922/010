@@ -142,15 +142,16 @@ function MusicForegroundBridge() {
   const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
   const position = useMusicPlayerStore((s) => s.position);
   const duration = useMusicPlayerStore((s) => s.duration);
-  // 媒体通知（MediaStyle 控制）：播放态/切歌/每 5s 进度更新（节流，避免高频写通知）
-  const lastNotify = useRef(0);
+  // 媒体通知（MediaStyle 控制）：只在 切歌/状态变化 时更新通知（不再每 5s 重建——
+  // ColorOS 媒体卡疑似每次通知重建都重置进度观感；进度由服务端 1s ticker 持续推送 session）
+  const lastNotifySig = useRef('');
   useEffect(() => {
     if (playbackState === 'playing') {
       const st = useMusicPlayerStore.getState();
       const track = st.queue[st.currentIndex];
-      const now = Date.now();
-      if (now - lastNotify.current < 5000 && track?.title) return;
-      lastNotify.current = now;
+      const sig = `${st.currentIndex}|${playbackState}|${st.url || ''}`;
+      if (sig === lastNotifySig.current && track?.title) return;
+      lastNotifySig.current = sig;
       let cover = String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
       // 相对路径补全为绝对地址（source.48.cn），否则通知封面下载失败 → 系统控件无图
       if (cover && !/^https?:\/\//i.test(cover)) {
