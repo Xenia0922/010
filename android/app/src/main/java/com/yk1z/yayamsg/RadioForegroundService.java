@@ -185,49 +185,81 @@ public class RadioForegroundService extends Service {
   private void loadCover(final String url) {
     if (url == null || url.isEmpty()) return;
     coverLoader.execute(() -> {
-      HttpURLConnection conn = null;
-      try {
-        URL u = new URL(url);
-        conn = (HttpURLConnection) u.openConnection();
-        conn.setConnectTimeout(4000);
-        conn.setReadTimeout(6000);
-        conn.setRequestProperty("User-Agent", "PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)");
-        conn.setRequestProperty("Referer", "https://h5.48.cn/");
-        conn.setInstanceFollowRedirects(true);
-        conn.setRequestProperty("Accept", "image/*");
-        int code = conn.getResponseCode();
-        if (code / 100 != 2) return;
-        Bitmap bmp;
-        // 先读尺寸，仅超长边 > 1024 才降采样（锁屏封面要清晰；不再固定减半导致 80px 糊）
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        try (InputStream is0 = conn.getInputStream()) {
-          BitmapFactory.decodeStream(is0, null, bounds);
-        }
-        try (InputStream is = conn.getInputStream()) {
-          BitmapFactory.Options opt = new BitmapFactory.Options();
-          int longest = Math.max(bounds.outWidth, bounds.outHeight);
-          opt.inSampleSize = longest > 1024 ? (int) Math.pow(2, Math.ceil(Math.log(longest / 1024.0) / Math.log(2))) : 1;
-          bmp = BitmapFactory.decodeStream(is, null, opt);
-        }
-        if (bmp == null) {
-          Log.i("RadioFg", "cover decode null: " + url);
-          return;
-        }
-        coverBitmap = bmp;
-        Log.i("RadioFg", "cover OK size=" + bmp.getWidth() + "x" + bmp.getHeight());
-        renotify();
-      } catch (Throwable t) {
-        Log.i("RadioFg", "cover ERR: " + (t == null ? "" : t.getClass().getSimpleName() + " " + url));
-      } finally {
-        if (conn != null) {
-          try {
-            conn.disconnect();
-          } catch (Throwable ignored) {
-          }
+      // 0=原图 → 失败回退 1=160x160 缩略（snh48.com resize 服务；保证任意网络下 art 存在）
+      String attemptUrl = url;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        if (tryLoadCoverOnce(attemptUrl)) return;
+        if (attempt == 0) attemptUrl = withThumbMark(url);
+      }
+      Log.i("RadioFg", "cover ALL FAIL url=" + url);
+    });
+  }
+
+  /** 拼 160x160 缩略路径（原图在 www.snh48.com/resize_160x160/attached/... 布局） */
+  private String withThumbMark(String u) {
+    try {
+      java.net.URI uri = new java.net.URI(u);
+      String host = uri.getHost();
+      String path = uri.getPath() == null ? "" : uri.getPath();
+      if (path.contains("/resize_160x160")) return u;
+      int idx = path.lastIndexOf('/');
+      String dir = idx > 0 ? path.substring(0, idx) : "";
+      String file = idx >= 0 ? path.substring(idx + 1) : path;
+      return "https://" + host + dir + "/resize_160x160/" + file;
+    } catch (Throwable t) {
+      return u;
+    }
+  }
+
+  private boolean tryLoadCoverOnce(final String url) {
+    HttpURLConnection conn = null;
+    try {
+      URL u = new URL(url);
+      conn = (HttpURLConnection) u.openConnection();
+      conn.setConnectTimeout(4000);
+      conn.setReadTimeout(6000);
+      conn.setRequestProperty("User-Agent", "PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)");
+      conn.setRequestProperty("Referer", "https://h5.48.cn/");
+      conn.setInstanceFollowRedirects(true);
+      conn.setRequestProperty("Accept", "image/*");
+      int code = conn.getResponseCode();
+      if (code / 100 != 2) {
+        Log.i("RadioFg", "cover http " + code + " " + url);
+        return false;
+      }
+      BitmapFactory.Options bounds = new BitmapFactory.Options();
+      bounds.inJustDecodeBounds = true;
+      try (InputStream is0 = conn.getInputStream()) {
+        BitmapFactory.decodeStream(is0, null, bounds);
+      }
+      Bitmap bmp;
+      try (InputStream is = conn.getInputStream()) {
+        BitmapFactory.Options opt = new BitmapFactory.Options();
+        int longest = Math.max(bounds.outWidth, bounds.outHeight);
+        opt.inSampleSize = longest > 1024
+            ? (int) Math.pow(2, Math.ceil(Math.log(longest / 1024.0) / Math.log(2)))
+            : 1;
+        bmp = BitmapFactory.decodeStream(is, null, opt);
+      }
+      if (bmp == null) {
+        Log.i("RadioFg", "cover decode null: " + url);
+        return false;
+      }
+      coverBitmap = bmp;
+      Log.i("RadioFg", "cover OK " + url + " " + bmp.getWidth() + "x" + bmp.getHeight());
+      renotify();
+      return true;
+    } catch (Throwable t) {
+      Log.i("RadioFg", "cover ERR " + url);
+      return false;
+    } finally {
+      if (conn != null) {
+        try {
+          conn.disconnect();
+        } catch (Throwable ignored) {
         }
       }
-    });
+    }
   }
 
   /** 封面加载完成 / 歌词行变化：重发当前通知（前台服务幂等） */
@@ -333,9 +365,8 @@ public class RadioForegroundService extends Service {
         } else {
           big.setViewVisibility(R.id.mc_art, android.view.View.GONE);
         }
-        // 实验(对照)：ColorOS/三星锁屏若用自定义大视图渲染会导致进度条缺失/0:00；
-        // 先回标准 MediaStyle 大布局（系统自带 封面+进度+控件），歌词展开暂缓验证
-        // builder.setCustomBigContentView(big);
+        // OPPO 实测：标准 MediaStyle 布局在该机不显示封面（自定义大视图反而能显示 art+歌词）→ 恢复
+        builder.setCustomBigContentView(big);
       } catch (Throwable ignored) {
       }
     }
