@@ -202,7 +202,7 @@ public class RadioForegroundService extends Service {
       String host = uri.getHost();
       String path = uri.getPath() == null ? "" : uri.getPath();
       if (path.contains("/resize_")) return u; // 已是缩略（任何尺寸）
-      String newPath = (path.startsWith("/") ? "" : "/") + "resize_160x160" + (path.startsWith("/") ? path : "/" + path);
+      String newPath = (path.startsWith("/") ? "" : "/") + "resize_500x500" + (path.startsWith("/") ? path : "/" + path);
       return "https://" + host + newPath;
     } catch (Throwable t) {
       return u;

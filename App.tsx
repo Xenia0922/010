@@ -109,8 +109,10 @@ function MusicForegroundBridge() {
       if (cover && !/^https?:\/\//i.test(cover)) {
         cover = `https://source.48.cn${cover.startsWith('/') ? cover : '/' + cover}`;
       }
-      // 锁屏/媒体卡封面去缩略标记取原图（160x160 小图上锁屏放大→糊）
-      cover = cover.replace(/resize_\d+x\d+\//i, '') || cover;
+      // 锁屏/媒体卡封面：160x160 → 500x500 高清缩略（保留 resize 结构；直接取原图在该站 404）
+      if (/resize_\d+x\d+/i.test(cover)) {
+        cover = cover.replace(/resize_\d+x\d+/i, 'resize_500x500');
+      }
       const artistText = String((track as any)?.artist || (track as any)?.groupLabel || '');
       const albumText = String((track as any)?.album || '');
       const lyrIdx = currentLyricIndex(st.lyrics, st.position);
