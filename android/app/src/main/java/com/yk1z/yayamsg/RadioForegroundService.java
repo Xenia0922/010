@@ -333,7 +333,9 @@ public class RadioForegroundService extends Service {
         } else {
           big.setViewVisibility(R.id.mc_art, android.view.View.GONE);
         }
-        builder.setCustomBigContentView(big);
+        // 实验(对照)：ColorOS/三星锁屏若用自定义大视图渲染会导致进度条缺失/0:00；
+        // 先回标准 MediaStyle 大布局（系统自带 封面+进度+控件），歌词展开暂缓验证
+        // builder.setCustomBigContentView(big);
       } catch (Throwable ignored) {
       }
     }
