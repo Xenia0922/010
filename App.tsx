@@ -17,7 +17,7 @@ import { MusicEngine } from './src/services/musicPlayer';
 import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
 import { NOTICE_URL } from './src/constants';
-import { initRuntimeLog, logCrash } from './src/utils/runtimeLog';
+import { initRuntimeLog, logCrash, logInfo } from './src/utils/runtimeLog';
 import { usePalette } from './src/theme/colors';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { useSafeAreaInsets } from './src/hooks/useSafeAreaInsets';
