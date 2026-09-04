@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaMetadata;
@@ -149,7 +150,11 @@ public class RadioForegroundService extends Service {
         }
       }
     }
-    startForeground(NOTIFICATION_ID, buildNotification());
+    if (Build.VERSION.SDK_INT >= 29) {
+      startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+    } else {
+      startForeground(NOTIFICATION_ID, buildNotification());
+    }
     if (wakeLock != null && !wakeLock.isHeld()) {
       try {
         wakeLock.acquire();
@@ -208,9 +213,13 @@ public class RadioForegroundService extends Service {
   private Notification buildNotification() {
     NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm != null) {
+      // IMPORTANCE_DEFAULT：ColorOS 等把 LOW 当"不重要通知"折叠→不投喂媒体中心/锁屏
+      // （MuMu/AOSP 无此问题，实测 session 正常；OPPO 需渠道够级别才显示媒体卡片）
       NotificationChannel channel = new NotificationChannel(
-          CHANNEL_ID, "后台播放", NotificationManager.IMPORTANCE_LOW);
+          CHANNEL_ID, "后台播放", NotificationManager.IMPORTANCE_DEFAULT);
       channel.setDescription("播放音乐/电台时保持后台运行");
+      channel.setSound(null, null);
+      channel.enableVibration(false);
       nm.createNotificationChannel(channel);
     }
     String subLine = String.format("%s%s%s",
