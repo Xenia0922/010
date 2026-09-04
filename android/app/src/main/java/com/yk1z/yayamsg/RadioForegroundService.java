@@ -35,7 +35,8 @@ import java.util.concurrent.Executors;
  * - 播放器本体仍在 RN 进程（LiveExoView / RNV Video），本服务只负责保活与通知交互。
  */
 public class RadioForegroundService extends Service {
-  private static final String CHANNEL_ID = "yaya_radio";
+  // v2：渠道重要性 LOW→DEFAULT 后须换 ID（旧渠道被系统缓存不升级，ColorOS 仍按旧 LOW 折叠）
+  private static final String CHANNEL_ID = "yaya_radio_v2";
   private static final int NOTIFICATION_ID = 2024;
 
   private PowerManager.WakeLock wakeLock;
