@@ -758,21 +758,22 @@ function roomMedia(item: any): RoomMedia | null {
   ]) || deepFindText([item, ext, body], ['liveId', 'liveid', 'live_id']) || extractLiveIdFromText([item, ext, body, text]);
   const urls = pickPlayableUrls([item, ext, body], !!liveId || msgType.includes('LIVE'));
   let url = urls[0] || '';
-  // Fallback: try collecting all URLs from raw data
+  // Fallback: try collecting all URLs from parsed media containers.
+  // ⚠️ 不再扫描原始 item：其中 extInfo 是序列化 JSON 字符串，正则会把 ext.user.avatar
+  // （成员公式照等）误当图片附件——徐钰涵每条文字消息带公式照的根因。
+  // ext 已 parseObject（avatar/headImg/picPath 等键被 collectUrls 跳过），body 是消息正文，
+  // 两者都不会泄漏头像。
   if (!url && !liveId) {
     const allUrls: string[] = [];
-    collectUrls(item, allUrls);
     collectUrls(ext, allUrls);
     collectUrls(body, allUrls);
     url = allUrls.find(u => u && /^https?:\/\//i.test(u)) || '';
   }
-  // Fallback: if still no url but text/body has a URL, use it
+  // Fallback: if still no url but body/text itself contains a URL (typed link), use it
   if (!url && !liveId) {
     const rawUrls: string[] = [];
-    collectUrls(item, rawUrls);
     collectUrls(ext, rawUrls);
     collectUrls(body, rawUrls);
-    // Also check the raw text for URLs
     const textMatch = String(text || '').match(/(https?:\/\/[^\s]+)/i);
     if (textMatch) rawUrls.push(textMatch[1]);
     url = rawUrls.find(u => u && /^https?:\/\//i.test(u)) || '';
@@ -839,6 +840,7 @@ function roomMedia(item: any): RoomMedia | null {
         console.warn(`[roomMedia-img] item=${topKeys}`);
         console.warn(`[roomMedia-img] body=${bodyKeys}`);
         console.warn(`[roomMedia-img] ext=${extKeys}`);
+        console.warn(`[roomMedia-img] JSON=${JSON.stringify(item || {}).slice(0, 1600)}`);
       }
     }
   } catch {}
