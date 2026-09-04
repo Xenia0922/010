@@ -64,6 +64,37 @@ function installGlobalErrorHandler() {
   });
 }
 
+// 封面转 dataURI：绕开部分 ROM(OPPO ColorOS) Java 侧联网拉封面失败的问题；
+// RN fetch 在音乐库已证明可加载该图。按 URL 缓存避免 5s 重复下载。
+const coverDataCache = new Map<string, string>();
+function fetchCoverAsData(coverUrl: string, timeoutMs = 7000): Promise<string> {
+  if (!coverUrl) return Promise.resolve('');
+  if (coverUrl.startsWith('data:')) return Promise.resolve(coverUrl);
+  const hit = coverDataCache.get(coverUrl);
+  if (hit) return Promise.resolve(hit);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(coverUrl), timeoutMs);
+    fetch(coverUrl)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('http' + r.status))))
+      .then((blob: any) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          clearTimeout(timer);
+          const data = String(reader.result || '');
+          if (data.startsWith('data:')) {
+            coverDataCache.set(coverUrl, data);
+            resolve(data);
+          } else {
+            resolve(coverUrl);
+          }
+        };
+        reader.onerror = () => { clearTimeout(timer); resolve(coverUrl); };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => { clearTimeout(timer); resolve(coverUrl); });
+  });
+}
+
 installGlobalErrorHandler();
 initRuntimeLog().catch(() => {});
 
@@ -117,10 +148,11 @@ function MusicForegroundBridge() {
       const albumText = String((track as any)?.album || '');
       const lyrIdx = currentLyricIndex(st.lyrics, st.position);
       const lyricText = lyrIdx >= 0 && st.lyrics[lyrIdx] ? st.lyrics[lyrIdx].text : '';
-      ensureNotificationPermission().then(() => {
+      ensureNotificationPermission().then(async () => {
+        const finalCover = await fetchCoverAsData(cover);
         startRadioForeground({
           title: track?.title || '音乐',
-          cover,
+          cover: finalCover,
           artist: artistText,
           album: albumText,
           lyric: lyricText,
@@ -129,7 +161,7 @@ function MusicForegroundBridge() {
           duration: st.duration,
         });
         try {
-          logInfo(`[media] notify start title=${String(track?.title || '').slice(0, 20)} dur=${st.duration} pos=${st.position} cover=${cover ? cover.slice(0, 60) : 'EMPTY'}`, 'media');
+          logInfo(`[media] notify start title=${String(track?.title || '').slice(0, 20)} dur=${st.duration} pos=${st.position} cover=${finalCover ? (finalCover.startsWith('data:') ? 'DATA' : finalCover.slice(0, 60)) : 'EMPTY'}`, 'media');
         } catch {}
       }).catch((err: any) => {
         try { logInfo(`[media] notify perm rejected: ${String(err && err.message || err).slice(0, 120)}`, 'media'); } catch {}

@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Base64;
 import android.util.Log;
 import android.os.PowerManager;
 import android.widget.RemoteViews;
@@ -185,6 +186,25 @@ public class RadioForegroundService extends Service {
   private void loadCover(final String url) {
     if (url == null || url.isEmpty()) return;
     coverLoader.execute(() -> {
+      // data: URI（RN 侧已把图片拉成 base64，绕开 Java 网络在个别 ROM 被压制/失败的问题）
+      if (url.startsWith("data:image")) {
+        try {
+          int comma = url.indexOf(',');
+          String b64 = comma >= 0 ? url.substring(comma + 1) : url;
+          byte[] bytes = Base64.decode(b64, Base64.DEFAULT);
+          BitmapFactory.Options opt = new BitmapFactory.Options();
+          Bitmap bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
+          if (bmp != null) {
+            coverBitmap = bmp;
+            Log.i("RadioFg", "cover OK dataURI " + bmp.getWidth() + "x" + bmp.getHeight());
+            renotify();
+            return;
+          }
+        } catch (Throwable t) {
+          Log.i("RadioFg", "cover dataURI decode ERR " + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage()));
+        }
+        return;
+      }
       // 独立三连试：原样 → 强制160 → 强制500（snh48 resize 仅部分规格存在；不因"已是 resize"跳过）
       String[] tries = { url, variantResize(url, "160x160"), variantResize(url, "500x500") };
       java.util.LinkedHashSet<String> uniq = new java.util.LinkedHashSet<>();
