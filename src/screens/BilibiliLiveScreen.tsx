@@ -152,6 +152,15 @@ export default function BilibiliLiveScreen() {
   const safeIndex = Math.min(candidateIndex, Math.max(0, visibleCandidates.length - 1));
   const currentCandidate = visibleCandidates[safeIndex];
   const streamUrl = currentCandidate?.url || '';
+  // B站直播默认走网页内核（flv.js/HLS）：用户反馈原生内核画面左上角带官方 LIVE 红标且兼容性问题多，
+  // 网页内核无该角标。每次进直播间仅强制一次；用户仍可经「更多→切回原生播放器」手动换回。
+  const webForcedRef = useRef(false);
+  useEffect(() => {
+    if ((currentCandidate?.url || '') && !webForcedRef.current) {
+      webForcedRef.current = true;
+      usePlayerStore.getState().setUseWebKernel(true);
+    }
+  }, [currentCandidate]);
   const qualityLabel = qualities.find((q) => q.qn === qualityQn)?.label || '';
 
   // 画中画（悬浮窗）状态同步：直播流解析成功且未暂停、非网页播放器时置位
