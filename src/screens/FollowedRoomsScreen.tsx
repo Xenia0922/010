@@ -2092,15 +2092,10 @@ export default function FollowedRoomsScreen() {
               )) : (!bubbleText && !gift) ? (
                 <Text style={[styles.msgBody, (idol || mine) && styles.msgBodyHighlight, (idol || mine) ? { color: palette.onTint } : { color: palette.labelSecondary }]}>{t('[空消息]')}</Text>
               ) : null}
-              {media?.url && playingMedia?.url === media.url ? (
-                media.type === 'link' ? (
-                  <TouchableOpacity style={styles.openLinkBtn} onPress={() => Linking.openURL(media.url).catch(() => {})} activeOpacity={0.85}>
-                    <Text style={[styles.openLinkText, { color: palette.tint }]} numberOfLines={1}>{media.url}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  /* 统一播放器（重写）：房间消息音视频 → 内嵌 PlayerScreen（比例自适应） */
-                  <RoomMediaPlayer media={media} />
-                )
+              {media?.url && playingMedia?.url === media.url && media.type === 'link' ? (
+                <TouchableOpacity style={styles.openLinkBtn} onPress={() => Linking.openURL(media.url).catch(() => {})} activeOpacity={0.85}>
+                  <Text style={[styles.openLinkText, { color: palette.tint }]} numberOfLines={1}>{media.url}</Text>
+                </TouchableOpacity>
               ) : null}
             </View>
           </View>
@@ -2221,6 +2216,19 @@ export default function FollowedRoomsScreen() {
               )}
             </View>
           </View>
+        ) : null}
+        {/* 语音消息实际播放器：页面级隐藏 Video（仅气泡卡片交互，不渲染任何可见控件） */}
+        {playingMedia && playingMedia.type === 'audio' && playingMedia.url ? (
+          <Video
+            key={playingMedia.url}
+            source={playerSource(playingMedia.url)}
+            style={styles.hiddenAudioVideo}
+            paused={false}
+            playInBackground
+            ignoreSilentSwitch="ignore"
+            onEnd={() => setPlayingMedia(null)}
+            onError={() => setPlayingMedia(null)}
+          />
         ) : null}
         <ZoomImageModal url={fullImageUrl} onClose={() => setFullImageUrl('')} />
         <ScreenHeader title={headerTitle} onBack={closeRoom} overlay={!!roomBgUri} right={
@@ -3015,4 +3023,5 @@ const styles = StyleSheet.create({
   roomRankProgressFill: { height: 4, borderRadius: 2 },
   roomRankValue: { fontSize: 11, fontWeight: '700', marginLeft: 6, flexShrink: 1 },
   empty: { textAlign: 'center', marginTop: 60, fontSize: 14, paddingHorizontal: 24, lineHeight: 20 },
+  hiddenAudioVideo: { width: 1, height: 1, position: 'absolute', top: -9999, left: -9999, opacity: 0 },
 });

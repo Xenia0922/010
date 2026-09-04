@@ -109,6 +109,12 @@ export default function MusicLibraryScreen() {
   const showToast = useUiStore((state) => state.showToast);
   const playbackState = useMusicPlayerStore((s) => s.playbackState);
   const playUrl = useMusicPlayerStore((s) => s.url);
+  // 音量归一：R2（gnz.hk/music.gnz.hk）母带普遍比 48 官方源响 10-15%，统一压到 0.86；
+  // 官方源维持 1.0。后续若 bilibili 等直播源也需对齐，按 host 在此表增补即可。
+  const playVolume = useMemo(() => {
+    const u = String(playUrl || '').toLowerCase();
+    return /(gnz\.hk|gnz-music|music\.gnz)/.test(u) || /\.r2\.|r2-music/i.test(u) ? 0.86 : 1.0;
+  }, [playUrl]);
   const currentIndex = useMusicPlayerStore((s) => s.currentIndex);
   const queue = useMusicPlayerStore((s) => s.queue);
   const playMode = useMusicPlayerStore((s) => s.playMode);
@@ -598,6 +604,7 @@ export default function MusicLibraryScreen() {
           },
         }}
         style={styles.tinyPlayer}
+        volume={playVolume}
         paused={playbackState !== 'playing'}
         // 单曲循环用原生 repeat（无缝、无 seek(0) 重新缓冲的卡顿）；onEnd 仅处理顺序/随机切歌
         repeat={playMode === 'single'}
