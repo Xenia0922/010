@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getPlayerHtml } from '../../components/media/player';
@@ -39,10 +39,20 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
     },
   }));
 
+  // ⚠️ 修复「反复刷新直播流」：父层每 2s 上报 progress → PlayerCore 重渲染 →
+  // 若每次重算 html 字符串，WebView 视作新页面整页 reload（直播无限重载）。
+  // 钉死为 URL+headers 级稳定；续播位置只在首次挂载取一次。
+  const resumeOnce = useRef<number>(resumeAt || 0);
+  const html = useMemo(
+    () => getPlayerHtml(source.url, undefined, resumeOnce.current || 0, source.kind !== 'live', (source.headers || {}) as any),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [source.url, source.headers],
+  );
+
   return (
     <WebView
       ref={webRef}
-      source={{ html: getPlayerHtml(source.url, undefined, resumeAt || 0, source.kind !== 'live', (source.headers || {}) as any) }}
+      source={{ html }}
       style={StyleSheet.absoluteFill}
       javaScriptEnabled
       domStorageEnabled
