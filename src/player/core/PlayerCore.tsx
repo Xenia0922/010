@@ -48,12 +48,22 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
       usePlayerStore.getState().setSeekTarget(0);
       return;
     }
+    // clamp：不得 seek 到流末尾之外（Exo 对末尾边界 seek 行为异常，易触发原生异常）
+    const target = Math.max(0, Math.min(sd - 0.3, seekTarget));
+    usePlayerStore.getState().setPosition(target);
+    usePlayerStore.getState().setSeekTarget(0);
     if (!useWebKernel && activeKernel === 'native' && nativeRef.current) {
-      nativeRef.current.seek(seekTarget);
-      usePlayerStore.getState().setSeekTarget(0);
+      try {
+        nativeRef.current.seek(target);
+      } catch (err) {
+        console.warn('[PlayerCore] native seek err', err);
+      }
     } else if (useWebKernel && webRef.current) {
-      webRef.current.seek(seekTarget);
-      usePlayerStore.getState().setSeekTarget(0);
+      try {
+        webRef.current.seek(target);
+      } catch (err) {
+        console.warn('[PlayerCore] web seek err', err);
+      }
     }
   }, [seekTarget, useWebKernel, activeKernel]);
   // rate 同步：web 内核每次倍速变化下发（native 经 prop 实时生效）
