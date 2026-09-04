@@ -113,11 +113,11 @@ export function onRadioStopRequested(cb: () => void): () => void {
 }
 
 /** 媒体通知控制回调（播放/暂停、上一首、下一首、停止）：返回解绑函数 */
-export function onRadioControlRequested(cb: (action: 'play_pause' | 'prev' | 'next' | 'stop' | 'seek', value?: number) => void): () => void {
+export function onRadioControlRequested(cb: (action: 'play' | 'pause' | 'play_pause' | 'prev' | 'next' | 'stop' | 'seek', value?: number) => void): () => void {
   if (Platform.OS !== 'android') return () => {};
   const sub = DeviceEventEmitter.addListener('RadioControlRequested', (e: any) => {
     const a = String(e?.action || '');
-    if (a === 'play_pause' || a === 'prev' || a === 'next' || a === 'stop' || a === 'seek') {
+    if (a === 'play' || a === 'pause' || a === 'play_pause' || a === 'prev' || a === 'next' || a === 'stop' || a === 'seek') {
       cb(a as any, Number(e?.value) || 0);
     }
   });

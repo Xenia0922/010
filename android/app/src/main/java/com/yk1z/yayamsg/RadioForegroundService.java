@@ -108,11 +108,11 @@ public class RadioForegroundService extends Service {
     mediaSession.setCallback(new MediaSession.Callback() {
       @Override
       public void onPlay() {
-        RadioServiceModule.emitControl(getApplicationContext(), "play_pause");
+        RadioServiceModule.emitControl(getApplicationContext(), "play");
       }
       @Override
       public void onPause() {
-        RadioServiceModule.emitControl(getApplicationContext(), "play_pause");
+        RadioServiceModule.emitControl(getApplicationContext(), "pause");
       }
       @Override
       public void onSkipToNext() {

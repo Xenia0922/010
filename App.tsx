@@ -158,7 +158,11 @@ function MusicForegroundBridge() {
   // 通知栏媒体控制（播放/暂停、上一首、下一首）→ 驱动 MusicEngine
   useEffect(() => onRadioControlRequested((action, value) => {
     const st = useMusicPlayerStore.getState();
-    if (action === 'play_pause') {
+    if (action === 'play') {
+      if (st.playbackState === 'paused' && st.queue.length) MusicEngine.resume();
+    } else if (action === 'pause') {
+      if (st.playbackState === 'playing') st.setPlaybackState('paused');
+    } else if (action === 'play_pause') {
       if (st.playbackState === 'playing') st.setPlaybackState('paused');
       else if (st.playbackState === 'paused') MusicEngine.resume();
       else if (!st.queue.length) return;
