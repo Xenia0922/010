@@ -257,6 +257,14 @@ public class RadioForegroundService extends Service {
     }
   }
 
+  private byte[] readAll(InputStream is) throws java.io.IOException {
+    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    byte[] buf = new byte[8192];
+    int n;
+    while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
+    return out.toByteArray();
+  }
+
   private boolean tryLoadCoverOnce(final String url) {
     HttpURLConnection conn = null;
     try {
@@ -273,20 +281,21 @@ public class RadioForegroundService extends Service {
         Log.i("RadioFg", "cover http " + code + " " + url);
         return false;
       }
+      // ⚠️ 同一条连接只读一次流（旧实现读两遍 → 第二遍为空 → 解码 null → OPPO 封面=logo）
+      byte[] bytes = readAll(conn.getInputStream());
+      if (bytes == null || bytes.length == 0) {
+        Log.i("RadioFg", "cover empty body " + url);
+        return false;
+      }
       BitmapFactory.Options bounds = new BitmapFactory.Options();
       bounds.inJustDecodeBounds = true;
-      try (InputStream is0 = conn.getInputStream()) {
-        BitmapFactory.decodeStream(is0, null, bounds);
-      }
-      Bitmap bmp;
-      try (InputStream is = conn.getInputStream()) {
-        BitmapFactory.Options opt = new BitmapFactory.Options();
-        int longest = Math.max(bounds.outWidth, bounds.outHeight);
-        opt.inSampleSize = longest > 1024
-            ? (int) Math.pow(2, Math.ceil(Math.log(longest / 1024.0) / Math.log(2)))
-            : 1;
-        bmp = BitmapFactory.decodeStream(is, null, opt);
-      }
+      BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+      BitmapFactory.Options opt = new BitmapFactory.Options();
+      int longest = Math.max(bounds.outWidth, bounds.outHeight);
+      opt.inSampleSize = longest > 1024
+          ? (int) Math.pow(2, Math.ceil(Math.log(longest / 1024.0) / Math.log(2)))
+          : 1;
+      Bitmap bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, opt);
       if (bmp == null) {
         Log.i("RadioFg", "cover decode null: " + url);
         return false;
