@@ -203,8 +203,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     return Math.max(0, Math.min(1, (pageX - progX.current) / progW.current));
   };
   const onProgDown = (pageX: number) => {
-    const dur = usePlayerStore.getState().duration;
-    if (usePlayerStore.getState().source?.kind === 'live' || dur <= 0) return;
+    const st = usePlayerStore.getState();
+    if (st.source?.kind === 'live' || st.duration <= 0) return;
+    if (st.state !== 'playing' && st.state !== 'paused') return; // loading/error 阶段不可拖（防 seek 未就绪原生崩）
     const r = ratioFromX(pageX);
     if (r == null) return;
     dragRatioRef.current = r;
@@ -222,8 +223,8 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     dragRatioRef.current = null;
     setDragRatio(null);
     if (r != null) {
-      const dur = usePlayerStore.getState().duration;
-      if (dur > 0) seekTo(r * dur); // 松手一次写入
+      const st = usePlayerStore.getState();
+      if (st.duration > 0 && (st.state === 'playing' || st.state === 'paused')) seekTo(r * st.duration); // 松手一次写入
     }
   };
 
@@ -338,8 +339,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
         </Animated.View>
         <Animated.View style={[styles.dockWrap, { opacity: controlsOpacity }]} pointerEvents="box-none">
           {/* 进度行：当前时间 —— 可拖进度 —— 总时间（直播仅显示 直播） */}
+          {!isLive ? (
           <View style={styles.progressRow}>
-            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(shownPos)}</Text> : null}
+            <Text style={styles.timeText}>{formatPlayTime(shownPos)}</Text>
             <View
               ref={progTrackRef}
               style={styles.progressTouch}
@@ -354,8 +356,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
               </View>
               <View style={[styles.progressThumb, { left: `${shownRatio * 100}%` }]} />
             </View>
-            {!isLive ? <Text style={styles.timeText}>{formatPlayTime(duration)}</Text> : <Text style={styles.timeText}>{t('直播')}</Text>}
+            <Text style={styles.timeText}>{formatPlayTime(duration)}</Text>
           </View>
+          ) : null}
           {/* 控制行：播放/暂停（主按钮）+ 右侧功能 */}
           <View style={styles.ctrlRow}>
             <TouchableOpacity style={styles.playBtn} onPress={togglePlay} activeOpacity={0.85}>
