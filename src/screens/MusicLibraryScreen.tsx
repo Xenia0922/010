@@ -20,6 +20,7 @@ import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import MiniPlayerBar from '../components/MiniPlayerBar';
 import FullScreenPlayer from '../components/FullScreenPlayer';
 import { MusicEngine, mediaUrl as buildMediaUrl, isPlayableHost } from '../services/musicPlayer';
+import { exoPlayTrack, exoControl, subscribeExo } from '../native/RadioExo';
 import { errorMessage } from '../utils/data';
 import { logError } from '../utils/runtimeLog';
 import { formatTimestamp, joinMeta } from '../utils/format';
@@ -295,6 +296,76 @@ export default function MusicLibraryScreen() {
       useMusicPlayerStore.getState().setSeekTarget(0);
     }
   }, [seekTarget, mediaReady]);
+
+  // ===== M2 原生 Exo 驱动（失败自动降级 RNV Video）=====
+  const [nativeOk, setNativeOk] = useState(false);
+  const nativeOkRef = useRef(false);
+  const nativeArmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => subscribeExo((type, p: any) => {
+    try {
+      const st = useMusicPlayerStore.getState();
+      if (type === 'progress') {
+        if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
+        if (typeof p?.position === 'number') st.setPosition(p.position);
+        if (p?.playing && !nativeOkRef.current) {
+          nativeOkRef.current = true;
+          setNativeOk(true);
+          if (nativeArmTimer.current) { clearTimeout(nativeArmTimer.current); nativeArmTimer.current = null; }
+        }
+      } else if (type === 'ended') {
+        if (st.playbackState === 'playing') MusicEngine.next();
+      } else if (type === 'cmd') {
+        const c = String(p?.cmd || '');
+        if (c === 'next') MusicEngine.next();
+        else if (c === 'prev') MusicEngine.prev();
+      } else if (type === 'error') {
+        nativeOkRef.current = false;
+        setNativeOk(false);
+      }
+    } catch {}
+  }), []);
+
+  // 推当前曲到 Exo
+  useEffect(() => {
+    if (!playUrl || playbackState !== 'playing') return;
+    const st = useMusicPlayerStore.getState();
+    const tr = st.queue[st.currentIndex];
+    if (!tr) return;
+    const coverRaw = String((tr as any).coverUrl || (tr as any).cover || '') || '';
+    const cover = /^https?:\/\//i.test(coverRaw) ? coverRaw : undefined;
+    exoPlayTrack({
+      url: playUrl,
+      title: String(tr.title || '音乐'),
+      artist: String((tr as any).artist || (tr as any).groupLabel || ''),
+      album: String((tr as any).album || ''),
+      art: cover,
+    }, Number(st.position) > 0 ? st.position : 0, true, {
+      'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)',
+      Referer: 'https://h5.48.cn/',
+      Origin: 'https://h5.48.cn',
+    });
+  }, [playUrl, currentIndex, playbackState]);
+
+  // 播放/暂停同步 Exo
+  useEffect(() => {
+    if (!nativeOkRef.current) return;
+    if (playbackState === 'paused') exoControl('pause');
+    else if (playbackState === 'playing') exoControl('resume');
+  }, [playbackState]);
+
+  // 拖动进度 → Exo seek（消费后清 0）
+  useEffect(() => {
+    if (seekTarget > 0 && nativeOkRef.current) {
+      exoControl('seek', seekTarget);
+      useMusicPlayerStore.getState().setSeekTarget(0);
+    }
+  }, [seekTarget]);
+
+  // 停止/清除 → Exo stop
+  useEffect(() => {
+    if (playbackState === 'idle' && nativeOkRef.current) exoControl('stop');
+  }, [playbackState]);
 
   const playSong = (item: any) => {
     const st = useMusicPlayerStore.getState();
@@ -604,8 +675,8 @@ export default function MusicLibraryScreen() {
           },
         }}
         style={styles.tinyPlayer}
-        volume={playVolume}
-        paused={playbackState !== 'playing'}
+        volume={nativeOk ? 0 : playVolume}
+        paused={nativeOk ? true : playbackState !== 'playing'}
         // 单曲循环用原生 repeat（无缝、无 seek(0) 重新缓冲的卡顿）；onEnd 仅处理顺序/随机切歌
         repeat={playMode === 'single'}
         ignoreSilentSwitch="ignore" playInBackground playWhenInactive

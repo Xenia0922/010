@@ -75,7 +75,29 @@ public class YayaExoService extends MediaSessionService {
         RadioExoModule.emitJs(getApplicationContext(), "error", extra);
       }
     });
-    mediaSession = new MediaSession.Builder(this, player).build();
+    // next/prev 回 JS（引擎管队列/模式/URL 解析）；play/pause/seek 保持 Exo 原生
+    mediaSession = new MediaSession.Builder(this, player)
+        .setCallback(new MediaSession.Callback() {
+          @Override
+          public int onPlayerCommandRequest(MediaSession ms, MediaSession.ControllerInfo info, int command) {
+            if (command == Player.COMMAND_SEEK_TO_NEXT) {
+              RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "next"));
+              return Player.COMMAND_INVALID; // 阻止 Exo 空队列自走，交由 JS 引擎切歌
+            }
+            if (command == Player.COMMAND_SEEK_TO_PREVIOUS) {
+              RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "prev"));
+              return Player.COMMAND_INVALID;
+            }
+            return command;
+          }
+        })
+        .build();
+  }
+
+  private static java.util.Map<String, Object> mapOf(String k, String v) {
+    java.util.Map<String, Object> m = new HashMap<>();
+    m.put(k, v);
+    return m;
   }
 
   @Override
