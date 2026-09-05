@@ -1,5 +1,8 @@
 package com.yk1z.yayamsg;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.IBinder;
@@ -32,6 +35,8 @@ import java.util.Map;
  */
 public class YayaExoService extends MediaSessionService {
   public static final String ACTION_PLAY_QUEUE = "yaya.exo.play_queue";
+  private static final String CHANNEL_ID = "yaya_radio_v3";
+  private static final int NOTIFICATION_ID = 2024;
   private static final Handler h = new Handler(Looper.getMainLooper());
 
   private ExoPlayer player;
@@ -48,6 +53,11 @@ public class YayaExoService extends MediaSessionService {
   @Override
   public void onCreate() {
     super.onCreate();
+    NotificationChannel ch = new NotificationChannel(CHANNEL_ID, "后台播放", NotificationManager.IMPORTANCE_DEFAULT);
+    ch.setDescription("播放音乐/电台时保持后台运行");
+    ch.setSound(null, null);
+    ch.enableVibration(false);
+    getSystemService(NotificationManager.class).createNotificationChannel(ch);
     rebuildPlayer(currentHeaders);
   }
 
@@ -107,6 +117,7 @@ public class YayaExoService extends MediaSessionService {
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
+    ensureForeground(); // startForegroundService 契约：5s 内必须 startForeground（否则闪退）
     if (intent != null && ACTION_PLAY_QUEUE.equals(intent.getAction())) {
       try {
         String queueJson = intent.getStringExtra("queue");
@@ -190,6 +201,26 @@ public class YayaExoService extends MediaSessionService {
       extra.put("playing", player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED);
       extra.put("index", player.getCurrentMediaItemIndex());
       RadioExoModule.emitJs(getApplicationContext(), "progress", extra);
+    } catch (Throwable ignored) {}
+  }
+
+  @Override
+  public void onUpdateNotification(MediaSession session) {
+    ensureForeground();
+  }
+
+  private void ensureForeground() {
+    try {
+      Notification n = new Notification.Builder(this, CHANNEL_ID)
+          .setSmallIcon(R.mipmap.ic_launcher)
+          .setContentTitle("牙牙消息")
+          .setContentText("正在播放")
+          .setCategory(Notification.CATEGORY_TRANSPORT)
+          .setVisibility(Notification.VISIBILITY_PUBLIC)
+          .setOngoing(true)
+          .setOnlyAlertOnce(true)
+          .build();
+      startForeground(NOTIFICATION_ID, n);
     } catch (Throwable ignored) {}
   }
 
