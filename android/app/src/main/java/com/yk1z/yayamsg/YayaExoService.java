@@ -15,6 +15,7 @@ import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.media3.common.AudioAttributes;
@@ -62,6 +63,7 @@ public class YayaExoService extends Service {
   private long lastNotifyMs = 0;
   // 元数据（来自 playQueue JSON）
   private String title = "";
+  private String lastTrackUrl = ""; // 当前已下发曲目 url（progress 事件带出，供 JS 去竞态）
   private String artist = "";
   private String album = "";
   private String artPath = "";
@@ -71,9 +73,9 @@ public class YayaExoService extends Service {
     @Override public void run() {
       emitProgress();
       pushState(); // framework 会话（真实位置）
-      // ColorOS workaround：每秒重建 MediaStyle 完整通知（疑仅重绘最近一次完整通知）
+      // ColorOS workaround：周期重建 MediaStyle 完整通知（疑仅重绘最近一次完整通知）；3s 一次减闪烁
       long now = System.currentTimeMillis();
-      if (now - lastNotifyMs >= 1000) {
+      if (now - lastNotifyMs >= 3000) {
         lastNotifyMs = now;
         try {
           NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
@@ -158,12 +160,12 @@ public class YayaExoService extends Service {
             new Intent(this, MediaButtonProxyReceiver.class).setAction(Intent.ACTION_MEDIA_BUTTON),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
     session.setCallback(new MediaSession.Callback() {
-      @Override public void onPlay() { if (exo != null) exo.play(); }
-      @Override public void onPause() { if (exo != null) exo.pause(); }
-      @Override public void onSkipToNext() { RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "next")); }
-      @Override public void onSkipToPrevious() { RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "prev")); }
-      @Override public void onSeekTo(long pos) { if (exo != null) exo.seekTo(Math.max(0, pos)); }
-      @Override public void onStop() { if (exo != null) exo.pause(); }
+      @Override public void onPlay() { Log.i("YayaExo", "CMD onPlay"); if (exo != null) exo.play(); }
+      @Override public void onPause() { Log.i("YayaExo", "CMD onPause curPos=" + (exo == null ? -1 : exo.getCurrentPosition())); if (exo != null) exo.pause(); }
+      @Override public void onSkipToNext() { Log.i("YayaExo", "CMD onSkipToNext"); RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "next")); }
+      @Override public void onSkipToPrevious() { Log.i("YayaExo", "CMD onSkipToPrevious"); RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "prev")); }
+      @Override public void onSeekTo(long pos) { Log.i("YayaExo", "CMD onSeekTo pos=" + pos); if (exo != null) exo.seekTo(Math.max(0, pos)); }
+      @Override public void onStop() { Log.i("YayaExo", "CMD onStop"); if (exo != null) exo.pause(); }
     });
     session.setActive(true);
     artBitmap = null;
@@ -210,6 +212,7 @@ public class YayaExoService extends Service {
           JSONObject o = arr.getJSONObject(i);
           String url = o.optString("url", "");
           if (i == 0) firstUrl = url;
+          if (i == 0) lastTrackUrl = url;
           items.add(new MediaItem.Builder().setUri(url).build());
           title = o.optString("title");
           artist = o.optString("artist");
@@ -225,8 +228,13 @@ public class YayaExoService extends Service {
         }
         // 同曲去重：离开音乐页后再进入，页面 armed 状态重置会重推同一首 → 原生已在播则不重载
         // （重载会 setMediaItems(posMs) 从头/从旧位置打断后台播放）；仅按需 play()/seekTo(posMs)
+        // ⚠️ mediaId 可能为 null（setUri 未显式设 mediaId）→ 必须回退取 localConfiguration.uri，
+        //    否则同曲比较恒 false → 每次重复下发都整曲重载（22:53 实测 0.18s 内 4 连 SET-ITEMS）
         MediaItem cur = exo.getCurrentMediaItem();
-        String curUrl = cur == null ? null : cur.mediaId;
+        String curUrl = cur == null ? null
+            : (cur.mediaId != null && !cur.mediaId.isEmpty() ? cur.mediaId
+              : (cur.localConfiguration != null && cur.localConfiguration.uri != null
+                 ? cur.localConfiguration.uri.toString() : null));
         boolean sameTrack = curUrl != null && curUrl.equals(firstUrl);
         double vol = intent.getDoubleExtra("volume", 1.0);
         exo.setVolume((float) Math.max(0, Math.min(1.0, vol)));
@@ -240,6 +248,7 @@ public class YayaExoService extends Service {
           if (playing && !exo.getPlayWhenReady()) exo.play();
           // else if (!playing && exo.getPlayWhenReady()) exo.pause();
         } else {
+          Log.i("YayaExo", "SET-ITEMS url=" + firstUrl + " posMs=" + posMs + " sameTrack=" + sameTrack + " curState=" + (exo.getPlaybackState()));
           exo.setMediaItems(items, Math.max(0, Math.min(index, items.size() - 1)), posMs);
           exo.prepare();
           if (playing) exo.play();
@@ -318,7 +327,7 @@ public class YayaExoService extends Service {
     h.removeCallbacks(progressPoller);
   }
 
-  /** JS 进度回流（App 内进度条/播放态） */
+  /** JS 进度回流（App 内进度条/播放态）；带当前曲 url 供 JS 丢弃切歌竞态的旧曲心跳 */
   private void emitProgress() {
     if (exo == null) return;
     try {
@@ -327,6 +336,7 @@ public class YayaExoService extends Service {
       extra.put("duration", exo.getDuration() > 0 ? exo.getDuration() / 1000.0 : 0);
       extra.put("playing", exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED);
       extra.put("index", exo.getCurrentMediaItemIndex());
+      extra.put("url", lastTrackUrl);
       RadioExoModule.emitJs(getApplicationContext(), "progress", extra);
     } catch (Throwable ignored) {}
   }
@@ -376,6 +386,8 @@ public class YayaExoService extends Service {
       boolean playing = isPlaying();
       Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID);
       if (artBitmap != null) builder.setLargeIcon(artBitmap);
+      // 极简系统媒体通知：控制按钮只放系统媒体卡（QS/锁屏由 session 提供），
+      // 通知栏仅保留 MediaStyle 收纳条目（可在 系统设置-通知-牙牙消息-后台播放 关闭）
       builder.setSmallIcon(R.mipmap.ic_launcher)
           .setContentTitle(title.isEmpty() ? "牙牙消息" : title)
           .setContentText(sub)
@@ -384,13 +396,8 @@ public class YayaExoService extends Service {
           .setOngoing(true)
           .setOnlyAlertOnce(true)
           .setContentIntent(contentPi)
-          .addAction(android.R.drawable.ic_media_previous, "上一首", cmdPi("prev"))
-          .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
-              playing ? "暂停" : "播放", cmdPi("play_pause"))
-          .addAction(android.R.drawable.ic_media_next, "下一首", cmdPi("next"))
           .setStyle(new android.app.Notification.MediaStyle()
-              .setMediaSession(session == null ? null : session.getSessionToken())
-              .setShowActionsInCompactView(0, 1, 2));
+              .setMediaSession(session == null ? null : session.getSessionToken()));
       return builder.build();
     } catch (Throwable ignored) {
       return null;

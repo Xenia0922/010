@@ -5,10 +5,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 /**
  * 写节流包装：音乐 store 的 position 在 onProgress 下每 ~250ms 更新一次，
  * zustand persist 默认每次 set 都全量序列化（含整个 queue）写入 AsyncStorage——
- * 高频大写入伤 IO 与存储寿命。这里按 key 节流（30s trailing 合并），
- * 读取/删除不受影响；App 被杀时最多丢最近 30s 的进度（与 WebView 续播节流同级）。
+ * 高频大写入伤 IO 与存储寿命。这里按 key 节流（12s trailing 合并），
+ * 读取/删除不受影响；App 被杀时最多丢最近 12s 的进度（短播+杀进程不丢位置，防点回重头）。
+ * 暂停/切歌/失活时另显式 flush（flushMusicPlayerStorage）。
  */
-function createThrottleStorage(storage: { getItem: (name: string) => Promise<string | null>; setItem: (name: string, value: string) => Promise<void>; removeItem: (name: string) => Promise<void> }, ms = 30000) {
+function createThrottleStorage(storage: { getItem: (name: string) => Promise<string | null>; setItem: (name: string, value: string) => Promise<void>; removeItem: (name: string) => Promise<void> }, ms = 12000) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const pending = new Map<string, string>();
   const flushAll = () => {
@@ -204,7 +205,11 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
 
       setUrl: (url) => set({ url }),
 
-      setPlaybackState: (playbackState) => set({ playbackState }),
+      setPlaybackState: (playbackState) => {
+        set({ playbackState });
+        // 暂停/停止立即落盘：进程被杀时进度不丢（防「点回软件被重头加载」）
+        if (playbackState === 'paused' || playbackState === 'idle') flushMusicPlayerStorage();
+      },
 
       setMode: (playMode) => set({ playMode }),
 

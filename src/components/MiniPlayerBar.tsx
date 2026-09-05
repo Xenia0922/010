@@ -130,7 +130,7 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   ).current;
 
   // 唱片旋转：模块级单例（见 useVinylSpin）——跨详情页重进有记忆，切歌归零，暂停冻结。
-  const spinValue = useVinylSpin(track?.id, playbackState === 'playing');
+  const spinValue = useVinylSpin(track?.id, playbackState === 'playing' || playbackState === 'loading');
   const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const panResponder = useRef(

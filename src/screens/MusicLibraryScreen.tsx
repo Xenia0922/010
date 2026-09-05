@@ -330,8 +330,12 @@ export default function MusicLibraryScreen() {
       if (type === 'progress') {
         lastProgressTsRef.current = Date.now();
         const playingN = !!p?.playing;
-        if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
-        if (typeof p?.position === 'number') st.setPosition(p.position);
+        // 切歌竞态防护：旧曲心跳不写位置/时长（进度条回跳根因候选）
+        const staleUrl = !!p?.url && !!st.url && String(p.url) !== String(st.url);
+        if (!staleUrl) {
+          if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
+          if (typeof p?.position === 'number') st.setPosition(p.position);
+        }
         if (playingN) cancelArmTimer(); // Exo 已在原生出声 → 候选确认
         // 播放态回写（系统卡暂停/恢复→App 图标）由 App 全局滞回处理，本页不重复
       } else if (type === 'ended') {
@@ -392,6 +396,7 @@ export default function MusicLibraryScreen() {
       if (seq !== armSeqRef.current) return;
       const st2 = useMusicPlayerStore.getState();
       if (!st2.url || st2.url !== playUrl || st2.playbackState !== 'playing') return;
+      console.warn(`[push-page] ${art ? 'art-refresh' : 'initial'} url=${String(playUrl).slice(0, 50)} resumeAt=${Number(st2.seekTarget) > 0 ? st2.seekTarget : 0}`);
       // 起始位置只认 seekTarget：MusicEngine 切歌/点歌会清 0，resume(记忆续播)才写入位置；
       // 不能读 store.position —— 那是「上一首歌」的进度残留，会造成切歌从旧秒数开始（19:15 实测）
       const resumeAt = Number(st2.seekTarget) > 0 ? Number(st2.seekTarget) : 0;
@@ -408,6 +413,7 @@ export default function MusicLibraryScreen() {
       armTimer.current = setTimeout(() => {
         if (!nativeOkRef.current && !nativeDisabledRef.current) {
           nativeDisabledRef.current = true;
+          setNativeExoDisabled(true);
           setNativeState(false);
           try { exoControl('stop'); } catch {}
           const stNow = useMusicPlayerStore.getState();
@@ -416,18 +422,25 @@ export default function MusicLibraryScreen() {
         }
       }, 4000);
     };
+    // 立即下发（不带封面先出音，避免等 1.5s 封面下载才起播 —— 系统卡切歌不跟手）；封面就绪后再补发更新
+    doPush('');
     const coverRaw = String((tr as any).coverUrl || (tr as any).cover || (tr as any).thumbPath || '') || '';
-    if (!coverRaw) { doPush(''); return; }
-    (async () => {
-      let art = '';
-      try {
-        art = await Promise.race([
-          fetchCoverToFile(normalizeCoverUrl(coverRaw)),
-          new Promise<string>((res) => setTimeout(() => res(''), 1500)),
-        ]);
-      } catch { art = ''; }
-      doPush(art || String((tr as any).coverUrl || (tr as any).cover || ''));
-    })();
+    if (coverRaw) {
+      (async () => {
+        let art = '';
+        try {
+          art = await Promise.race([
+            fetchCoverToFile(normalizeCoverUrl(coverRaw)),
+            new Promise<string>((res) => setTimeout(() => res(''), 1500)),
+          ]);
+        } catch { art = ''; }
+        const stC = useMusicPlayerStore.getState();
+        if (stC.url === playUrl && stC.playbackState === 'playing') {
+          // 同曲补发：service 同 url 不重载，仅刷新元数据/封面
+          doPush(art || String((tr as any).coverUrl || (tr as any).cover || ''));
+        }
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playUrl, currentIndex, playbackState, playMode, playVolume]);
 

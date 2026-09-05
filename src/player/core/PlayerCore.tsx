@@ -166,8 +166,14 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
         source={source}
         onError={(msg) => {
           kernelError(msg);
-          // 原生重试耗尽 → 提供网页兜底（仅非 audioOnly）
-          if (!source.audioOnly) switchToWeb();
+          // 网页兜底仅对浏览器可播的 http 流（HLS/mp4）；rtmp/rtmps/flv 是 LiveExoView 专属，
+          // 切网页内核必黑屏（23:19 实测成员直播 rtmp fail 后误切 web 加载不出）→ 保留 error 态走重试
+          const uWeb = String(source.url || '').toLowerCase();
+          const webable = !source.audioOnly
+            && /^https?:/i.test(uWeb)
+            && !uWeb.startsWith('rtmp')
+            && !uWeb.includes('.flv');
+          if (webable) switchToWeb();
         }}
       />
     );

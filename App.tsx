@@ -14,6 +14,7 @@ import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioSto
 import {
   subscribeExo,
   exoPlayTrack,
+  exoControl,
   setNativeExoActive,
   setNativeExoDisabled,
   isNativeExoActive,
@@ -94,7 +95,7 @@ function currentLyricIndex(lines: Array<{ time: number; text: string }>, pos: nu
   return idx;
 }
 
-/** 向原生下发当前曲（切歌/恢复的全局兜底：页面未挂载时也能推；seekTarget 携带续播点） */
+/** 向原生下发当前曲（切歌/恢复的全局兜底：先立即起播不卡封面，封面就绪后补发更新元数据） */
 async function pushExoAfterSwitch() {
   try {
     const st = useMusicPlayerStore.getState();
@@ -114,25 +115,33 @@ async function pushExoAfterSwitch() {
       resumeAt = Number(st.seekTarget);
       useMusicPlayerStore.setState({ seekTarget: 0 });
     }
-    let art = '';
+    const vol = /(gnz\.hk|gnz-music|music\.gnz)/i.test(url) ? 0.86 : 1;
+    const rep = st.playMode === 'single' ? 1 : 0;
+    const send = (art: string) => {
+      console.warn(`[push-global] ${art ? 'art-refresh' : 'initial'} url=${String(url).slice(0, 50)} resumeAt=${resumeAt}`);
+      exoPlayTrack({
+        url,
+        title: String(track.title || '音乐'),
+        artist: String((track as any).artist || (track as any).groupLabel || ''),
+        album: String((track as any).album || ''),
+        art,
+      }, art ? 0 : resumeAt, true, headers, vol, rep);
+    };
+    send(''); // 立即起播（不等封面）
     const coverRaw = String((track as any).coverUrl || (track as any).cover || (track as any).thumbPath || '') || '';
     if (coverRaw) {
+      let art = '';
       try {
         art = await Promise.race([
           fetchCoverToFile(normalizeCoverUrl(coverRaw)),
           new Promise<string>((res) => setTimeout(() => res(''), 1500)),
         ]);
       } catch { art = ''; }
+      const st2 = useMusicPlayerStore.getState();
+      if (st2.url === url && st2.playbackState === 'playing' && !isNativeExoDisabled()) {
+        send(art || String((track as any).coverUrl || (track as any).cover || '')); // 同曲补发仅刷封面
+      }
     }
-    exoPlayTrack({
-      url,
-      title: String(track.title || '音乐'),
-      artist: String((track as any).artist || (track as any).groupLabel || ''),
-      album: String((track as any).album || ''),
-      art: art || coverRaw,
-    }, resumeAt, true, headers,
-      /(gnz\.hk|gnz-music|music\.gnz)/i.test(url) ? 0.86 : 1,
-      st.playMode === 'single' ? 1 : 0);
   } catch {}
 }
 
@@ -174,7 +183,7 @@ function MusicForegroundBridge() {
     lastPushKeyRef.current = key;
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     // 延迟到解析完成/当前 tick 稳定后再发（避免与页面同 tick 双发前一方吞 seekTarget）
-    pushTimerRef.current = setTimeout(() => { pushExoAfterSwitch().catch(() => {}); }, 60);
+    pushTimerRef.current = setTimeout(() => { pushExoAfterSwitch().catch(() => {}); }, 20);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackStateG, playUrlG, currentIndexG]);
   useEffect(() => {
@@ -183,6 +192,9 @@ function MusicForegroundBridge() {
       // 停止后可重新尝试原生（error/超时禁用仅限单次播放会话）
       setNativeExoActive(false);
       setNativeExoDisabled(false);
+      // ⚠️ 停止必须全局兜底：主页 ✕ 关闭/任何页面清空播放都置 idle，
+      // 停 Exo 服务的逻辑若只在音乐页 effect，页面未挂载时音乐会继续响（22:56 实测）
+      try { exoControl('stop'); } catch {}
     } else if (playbackStateG !== 'playing') {
       lastPushKeyRef.current = '';
     }
@@ -203,8 +215,12 @@ function MusicForegroundBridge() {
         }
         // 真实位置/时长全局同步（后台播放时 store 常真，回音乐页即见实际进度）
         const st = useMusicPlayerStore.getState();
-        if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
-        if (typeof p?.position === 'number') st.setPosition(p.position);
+        // 切歌竞态防护：旧曲心跳(url≠当前)不写位置/时长（防进度条回跳/脏数据）
+        const staleUrl = !!p?.url && !!st.url && String(p.url) !== String(st.url);
+        if (!staleUrl) {
+          if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
+          if (typeof p?.position === 'number') st.setPosition(p.position);
+        }
         if (playingN) {
           clearSyncPause();
           armSyncResume();

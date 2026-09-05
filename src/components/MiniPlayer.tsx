@@ -152,10 +152,8 @@ export function MiniPlayer() {
     return () => sub.remove();
   }, [visible, playing, info]);
 
-  if (!visible || !info) return null;
-
-  // 口袋48 直播流默认是 RTMP（ExoPlayer 播不了）——必须走原生 LiveExoView；
-  // 只有非直播/普通 http 流（HLS 等）才用 react-native-video
+  // ⚠️ 所有 hooks 必须在下方 `if (!visible || !info) return null` 之前：
+  // return 若夹在 hooks 中间，每次小窗开/关(visible 翻转) hooks 数量变化 → "Rendered more hooks" 崩溃
   const lowerUrl = String(info?.url || '').toLowerCase();
   const isNativeLive = !!info?.isLive && !!info?.url && (lowerUrl.startsWith('rtmp://') || lowerUrl.includes('.flv')) && !!LiveExoView;
   const NativeLiveView = (LiveExoView || null) as React.ComponentType<{ style?: any; url: string; onSize?: (e: any) => void }> | null;
@@ -166,7 +164,7 @@ export function MiniPlayer() {
     () => (useWebMini
       ? getPlayerHtml(info.url, undefined, 0, false, (info.web?.headers || {}) as any, Number(info.web?.volumeBoost) || 1)
       : ''),
-    [useWebMini, info.url],
+    [useWebMini, (info && info.url) || ''],
   );
   const handlePlayToggle = () => {
     const cur = useMiniPlayerStore.getState().playing;
@@ -188,6 +186,9 @@ export function MiniPlayer() {
     pos.setValue({ x: bx, y: by });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scale]);
+
+  // 最后一个 hooks 结束于此；其后不允许再出现任何 hook（早退点）
+  if (!visible || !info) return null;
 
   return (
     <>
