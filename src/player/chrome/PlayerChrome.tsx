@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, GestureResponderEvent, Modal, PanResponder, Pressable, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -7,6 +7,9 @@ import { PlayerFeatures } from '../types';
 import { useI18n } from '../../i18n';
 import { usePalette } from '../../theme';
 import { formatPlayTime } from './FullscreenManager';
+import { enqueueDownload } from '../../services/downloads';
+import { useUiStore } from '../../store';
+import { errorMessage } from '../../utils/data';
 
 interface Props {
   features?: PlayerFeatures;
@@ -172,6 +175,29 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
   // 出现可拖进度条（拖动 seek 直播流 → RNV 原生异常闪退）与错误的时间样式
   const _u = String((source && source.url) || '').toLowerCase();
   const isLive = source.kind === 'live' || _u.startsWith('rtmp://') || _u.startsWith('rtmps://') || _u.includes('.flv');
+  // 播放器内下载（替代长按）：点播/回放/音频可下载；HLS 分段与直播不提供
+  const canDownload = !isLive && !!source?.url && /^https?:/i.test(source.url) && !/\.m3u8/i.test(source.url);
+  const showToast = useUiStore((s) => s.showToast);
+  const runDownload = useCallback(async () => {
+    const s = usePlayerStore.getState();
+    const u = String(s.source?.url || '');
+    if (!u || /\.m3u8/i.test(u)) {
+      showToast(t('该流暂不支持直接下载'));
+      return;
+    }
+    try {
+      await enqueueDownload({ url: u, type: 'replay', name: String(s.meta?.title || '视频') });
+      showToast(t('已加入下载队列'));
+    } catch (e: any) {
+      showToast(t('下载失败：{msg}', { msg: errorMessage(e) }));
+    }
+    showControls();
+  }, [showToast, t, showControls]);
+  // 「更多」面板动作 = 页面传入 extraActions + 点播下载（放首位）
+  const moreActions = useMemo(() => {
+    if (!canDownload) return extraActions;
+    return [{ key: 'download', icon: 'download', label: t('下载'), onPress: runDownload } as any, ...extraActions];
+  }, [canDownload, extraActions, runDownload, t]);
   // 卡片内嵌态（inline 且未全屏）：不叠任何控制坞，点击即进全屏
   const cardMode = inline && !fullscreen;
   const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;
@@ -469,7 +495,7 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
                   {mirrorMode === 'none' ? t('镜像') : mirrorMode === 'horizontal' ? t('水平镜像') : t('垂直镜像')}
                 </Text>
               </TouchableOpacity>
-              {extraActions.map((action) => (
+              {moreActions.map((action) => (
                 <TouchableOpacity
                   key={action.key}
                   style={styles.moreItem}

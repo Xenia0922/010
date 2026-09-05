@@ -88,14 +88,27 @@ function currentLyricIndex(lines: Array<{ time: number; text: string }>, pos: nu
 }
 
 function MusicForegroundBridge() {
-  // M2：Exo 原生会话激活时，旧自管 MediaSession 服务立即停用（双会话会让 ColorOS 绑旧会话）
+  // M2：Exo 原生会话事件全局单点 —— 进度/位置实时写 store（离开音乐页后台播放时也同步）、
+  // 播完自动切歌、系统卡上一首/下一首命令 —— 全部常驻，不依赖音乐页是否挂载。
+  // （MusicLibraryScreen 另有页面级订阅负责「下发确认/降级/滞回」，双方操作经 MusicEngine 引擎级节流防重复）
   useEffect(() => subscribeExo((type, p: any) => {
     try {
-      if (type === 'progress' && p?.playing) {
-        if (!isNativeExoActive()) {
+      if (type === 'progress') {
+        // Exo 激活（原声在播）→ 旧自管服务立即停用（双会话会让 ColorOS 绑旧会话）
+        if (p?.playing && !isNativeExoActive()) {
           setNativeExoActive(true);
           stopRadioForeground();
         }
+        // 真实位置/时长全局同步（后台播放时 store 常真，回音乐页即见实际进度）
+        const st = useMusicPlayerStore.getState();
+        if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
+        if (typeof p?.position === 'number') st.setPosition(p.position);
+      } else if (type === 'ended') {
+        if (useMusicPlayerStore.getState().playbackState === 'playing') MusicEngine.next();
+      } else if (type === 'cmd') {
+        const c = String(p?.cmd || '');
+        if (c === 'next') MusicEngine.next();
+        else if (c === 'prev') MusicEngine.prev();
       } else if (type === 'error') {
         setNativeExoActive(false);
       }

@@ -1,4 +1,5 @@
 import { useMusicPlayerStore, Track, LyricLine } from '../store/musicPlayerStore';
+import { usePlayerStore } from '../player/store/playerStore';
 import { normalizeUrl } from '../utils/data';
 import { parseLrc } from '../utils/lyrics';
 import { getLyricsMatcher } from '../utils/lyricsIndex';
@@ -63,6 +64,8 @@ export const MusicEngine = {
   _playSeq: 0,
   // 预热地址缓存：trackKey → 已解析 URL（预加载下一首/起播提速，AWS 冷边首连慢）
   _warmUrls: new Map<string, string>(),
+  // 切歌节流：Exo 事件（ended/cmd next/prev）有 App 全局 + 页面双监听器时防连切两首
+  _skipTs: 0,
 
   /** 对 URL 发一次极小 Range 请求，提前打通 AWS/CDN 边缘与 TLS（后续 Exo 拉流更快、少卡起播） */
   async _warmUrl(url: string): Promise<void> {
@@ -201,6 +204,11 @@ export const MusicEngine = {
    * 不再持有/操作 Video ref，不放 seek 锁。
    */
   async playTrack(track: Track, queue?: Track[]) {
+    // 播放互斥：后播者胜 —— 音乐开播时，若直播/录播/视频播放器在放则先停掉
+    try {
+      const ps = usePlayerStore.getState();
+      if (ps.source && ps.state !== 'idle') ps.close();
+    } catch {}
     const seq = ++this._playSeq;
     const store = useMusicPlayerStore.getState();
     store.play(track, queue);
@@ -237,6 +245,11 @@ export const MusicEngine = {
    * 与 playTrack 的区别：playTrack 永远从 0 开始，resume 从记忆位置继续。
    */
   async resume() {
+    // 播放互斥：后播者胜 —— resume 同样停掉 playerStore 上的直播/录播/视频
+    try {
+      const ps = usePlayerStore.getState();
+      if (ps.source && ps.state !== 'idle') ps.close();
+    } catch {}
     const seq = ++this._playSeq;
     const store = useMusicPlayerStore.getState();
     const track = store.queue[store.currentIndex];
@@ -264,8 +277,11 @@ export const MusicEngine = {
     }
   },
 
-  /** Next track, fetch URL and play */
+  /** Next track, fetch URL and play（250ms 引擎级节流：多 Exo 监听器/连点防连切） */
   async next() {
+    const now = Date.now();
+    if (now - this._skipTs < 250) return null;
+    this._skipTs = now;
     const nextTrack = useMusicPlayerStore.getState().next();
     if (!nextTrack) return null;
     await this.playTrack(nextTrack);
@@ -274,6 +290,9 @@ export const MusicEngine = {
 
   /** Previous track */
   async prev() {
+    const now = Date.now();
+    if (now - this._skipTs < 250) return null;
+    this._skipTs = now;
     const prevTrack = useMusicPlayerStore.getState().prev();
     if (!prevTrack) return null;
     await this.playTrack(prevTrack);

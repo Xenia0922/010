@@ -26,16 +26,10 @@
     <!-- 电台前台保活服务：纯音频模式下后台/锁屏续播 + 通知栏停止按钮 -->
     <service android:name=".RadioForegroundService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback"/>
     <receiver android:name=".RadioMediaReceiver" android:exported="false"/>
-    <service
-        android:name=".YayaExoService"
-        android:exported="true"
-        android:foregroundServiceType="mediaPlayback">
-      <intent-filter>
-        <action android:name="androidx.media3.session.MediaSessionService"/>
-      </intent-filter>
-    </service>
-    <!-- media3 线控/媒体键：后台锁屏/蓝牙/耳机按键 → MediaButtonReceiver → 会话播放/暂停/切歌 -->
-    <receiver android:name="androidx.media3.session.MediaButtonReceiver" android:exported="true">
+    <!-- 音乐：真实 ExoPlayer + 单一 framework MediaSession（OPPO 命令全通 + 每秒通知助推刷新） -->
+    <service android:name=".YayaExoService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+    <!-- framework 会话的媒体键接收标记（让 ColorOS 把面板/媒体键路由给本会话） -->
+    <receiver android:name=".MediaButtonProxyReceiver" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MEDIA_BUTTON"/>
       </intent-filter>

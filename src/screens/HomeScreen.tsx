@@ -494,6 +494,20 @@ export default function HomeScreen() {
     handleNav({ title: '', desc: '', route: 'MusicLibraryScreen', icon: '' });
   }, [handleNav]);
 
+  /** 关闭音乐：清播放上下文（queue 保留以便再播），idle → 停 Exo 服务与系统媒体通知 */
+  const handleStopMusic = useCallback(() => {
+    const s = useMusicPlayerStore.getState();
+    if (!s.queue.length || s.playbackState === 'idle') return;
+    useMusicPlayerStore.setState({
+      url: '',
+      playbackState: 'idle',
+      position: 0,
+      duration: 0,
+      seekTarget: 0,
+      lyrics: [],
+    });
+  }, []);
+
   const hour = new Date().getHours();
   const greeting =
     hour < 5 ? t('夜深了') : hour < 11 ? t('早上好') : hour < 14 ? t('中午好') : hour < 18 ? t('下午好') : t('晚上好');
@@ -740,6 +754,25 @@ export default function HomeScreen() {
                         </Text>
                       ) : null}
                     </View>
+                    {musicPlaybackState === 'playing' || musicPlaybackState === 'paused' ? (
+                      // 关闭音乐：正在播放/暂停时显示（由 MusicEngine stop 链清空服务/系统卡）
+                      <ScalePressable
+                        onPress={handleStopMusic}
+                        pressedScale={0.9}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: 'rgba(128,128,128,0.12)',
+                          marginRight: 10,
+                        }}
+                      >
+                        <MaterialCommunityIcons name="close" color={palette.labelSecondary} size={18} />
+                      </ScalePressable>
+                    ) : null}
                     <Pill label={resumeLabel} accent onPress={handleResumeMusic} style={{ alignSelf: 'center' }} />
                   </View>
                 </GlassCard>

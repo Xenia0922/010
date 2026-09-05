@@ -19,6 +19,7 @@ import { errorMessage, pickText } from '../utils/data';
 import pocketApi from '../api/pocket48';
 import { resolveMemberRooms } from '../services/roomMapCache';
 import { useMemberStore } from '../store';
+import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import { LiveExoView, startRadioForeground, stopRadioForeground, onRadioStopRequested, onRadioControlRequested } from '../native/LivePlayer';
 import { ensureNotificationPermission } from '../utils/notifications';
 import { usePalette, makeShadows } from '../theme';
@@ -118,6 +119,13 @@ export default function RoomRadioScreen() {
   /** 应用流地址并强制重建播放器（url 变化 → LiveExoView key 变化 → 热换流） */
   const applyStreamUrl = (url: string, member: Member, mode: 'big' | 'small') => {
     console.warn(`[radio] ${member.ownerName} ${mode} 流地址=${String(url).slice(0, 160)} (rtmp=${isRtmpUrl(url)})`);
+    // 播放互斥：电台开播 → 后台音乐自动暂停（后播者胜）
+    try {
+      const mst = useMusicPlayerStore.getState();
+      if (mst.queue.length && (mst.playbackState === 'playing' || mst.playbackState === 'paused')) {
+        mst.setPlaybackState('paused');
+      }
+    } catch {}
     setRadioUrl(url);
     setStatus(t('已连接，正在缓冲...'));
     setPlaying(true);

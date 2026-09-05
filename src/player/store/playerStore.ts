@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import { PlayerSource, PlayerMeta, DanmakuSource } from '../types';
+// 播放互斥（单向）：playerStore 开播(直播/录播/视频/电台经此)时暂停后台音乐；
+// 反向（音乐开播停 playerStore 媒体）在 MusicEngine.playTrack/resume 内处理。
+import { useMusicPlayerStore } from '../../store/musicPlayerStore';
 
 /**
  * 全局播放器单例状态（重写核心）：
@@ -104,8 +107,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   seekTarget: 0,
   danmakuOn: true,
 
-  open: (source, meta = { title: '' }, danmaku = { type: 'none' }) =>
-    set((s) => {
+  open: (source, meta = { title: '' }, danmaku = { type: 'none' }) => {
+    // 播放互斥：后播者胜 —— 直播/录播/电台/视频开播时，后台音乐自动暂停（可再点回播放）
+    try {
+      const mst = useMusicPlayerStore.getState();
+      if (mst.queue.length && (mst.playbackState === 'playing' || mst.playbackState === 'paused')) {
+        mst.setPlaybackState('paused'); // → MusicLibrary 351 effect exoControl pause + 通知转暂停
+      }
+    } catch {}
+    return set((s) => {
       const urls = (source.urls && source.urls.length ? source.urls : [source.url]).filter(Boolean);
       return {
         source,
@@ -130,7 +140,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         candidateIndex: 0,
         ...(urls[0] && urls[0] !== source.url ? { source: { ...source, url: urls[0] } } : {}),
       };
-    }),
+    });
+  },
 
   close: () =>
     set({

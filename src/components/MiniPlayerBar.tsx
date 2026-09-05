@@ -9,6 +9,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   GestureResponderEvent,
@@ -156,6 +157,7 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
     } catch {}
   }, [playUrl]);
 
+  const handlePrev = useCallback(() => { try { MusicEngine.prev(); } catch {} }, []);
   const handleNext = useCallback(() => { try { MusicEngine.next(); } catch {} }, []);
   const handleMode = useCallback(() => { try { MusicEngine.cycleMode(); } catch {} }, []);
 
@@ -235,9 +237,18 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
               color={palette.labelSecondary}
             />
           </Pressable>
+          <Pressable onPress={handlePrev} onPressIn={pressIn} onPressOut={pressOut} style={styles.smallBtn}>
+            <Icon name="skip-previous" size={26} color={palette.label} />
+          </Pressable>
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <Pressable onPress={handleToggle} onPressIn={pressIn} onPressOut={pressOut} style={styles.playBtn}>
-              <Icon name={isPlaying ? 'pause-circle' : 'play-circle'} size={36} color={palette.tint} />
+              {playbackState === 'loading' ? (
+                <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator size="small" color={palette.tint} />
+                </View>
+              ) : (
+                <Icon name={isPlaying ? 'pause-circle' : 'play-circle'} size={36} color={palette.tint} />
+              )}
             </Pressable>
           </Animated.View>
           <Pressable onPress={handleNext} onPressIn={pressIn} onPressOut={pressOut} style={styles.playBtn}>
@@ -275,7 +286,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 4, paddingRight: 4 },
   cover: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#1a1a1a', overflow: 'hidden' },
   info: { flex: 1, minWidth: 0 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 0 },
   playBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
-  modeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  smallBtn: { width: 34, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  modeBtn: { width: 34, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
 });
