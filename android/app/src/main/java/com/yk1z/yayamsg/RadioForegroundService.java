@@ -59,14 +59,26 @@ public class RadioForegroundService extends Service {
   // 本服务每秒本地推进 position 并只写 session state（不重建通知，开销小）。
   private final Handler progressHandler = new Handler(Looper.getMainLooper());
   private boolean tickerRunning = false;
+  private long lastNotifyMs = 0;
   private final Runnable progressTicker = new Runnable() {
     @Override
     public void run() {
       if (isPlaying) {
-        position += 1000; // 本地时钟推进（JS 每 5s 也会校准一次真实 position）
-        pushSessionState(); // 只更新 MediaSession.PlaybackState（系统锁屏/流体云/蓝牙 AVRCP 都读它）
+        position += 500; // 500ms 步进
+        pushSessionState(); // 先会话
+        long now = System.currentTimeMillis();
+        // 每 1s 重建通知（完整推送 metadata+MediaStyle token+art）：
+        // ColorOS 疑似只重绘"最新一次完整通知+会话"（三星无需，OPPO 需要）
+        if (now - lastNotifyMs >= 1000) {
+          lastNotifyMs = now;
+          try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
+          } catch (Throwable ignored) {
+          }
+        }
       }
-      if (isPlaying) progressHandler.postDelayed(this, 1000);
+      if (isPlaying) progressHandler.postDelayed(this, 500);
       else tickerRunning = false;
     }
   };
