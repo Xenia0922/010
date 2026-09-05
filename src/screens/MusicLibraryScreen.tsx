@@ -621,7 +621,9 @@ export default function MusicLibraryScreen() {
         onLoad={(e) => {
           try {
             setMediaReady(true);
-            const dur = e.duration || 0;
+            // 仅有限正时长才写入：部分 R2 FLAC onLoad 给 0/NaN/Infinity，覆盖会毁掉已就绪时长
+            const durRaw = Number((e as any).duration);
+            const dur = Number.isFinite(durRaw) && durRaw > 0 ? durRaw : useMusicPlayerStore.getState().duration;
             useMusicPlayerStore.getState().setDuration(dur);
             // 续播回写：rehydrate 恢复的 position 已在 store 转成 seekTarget，
             // 媒体就绪后立即 seek（此后 onProgress 接管进度）
