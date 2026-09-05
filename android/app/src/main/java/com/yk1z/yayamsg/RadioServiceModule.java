@@ -56,6 +56,17 @@ public class RadioServiceModule extends ReactContextBaseJavaModule {
         .emit("RadioControlRequested", payload);
   }
 
+  /** 高频真实进度同步（500ms 级）：只更新 PlaybackState，不重建通知/不改曲目（对齐 Salt/椒盐的 Exo 实时推送节奏） */
+  @ReactMethod
+  public void syncPosition(double position) {
+    ReactApplicationContext context = getReactApplicationContext();
+    Intent intent = new Intent(context, RadioForegroundService.class);
+    intent.putExtra("position", position);
+    intent.putExtra("tickOnly", true);
+    // 服务已在前台：纯 startService（不触发 startForeground 5s 看门狗；媒体播放豁免后台启动限制）
+    context.startService(intent);
+  }
+
   /** 开播/更新：启动前台保活服务并展示媒体通知（幂等，重复调用仅更新通知） */
   @ReactMethod
   public void updateMedia(String title, String cover, boolean isPlaying, double position, double duration) {

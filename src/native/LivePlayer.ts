@@ -71,6 +71,14 @@ export interface RadioMediaInfo {
 }
 
 /** 开播/更新媒体通知：启动前台保活服务（MediaStyle 通知栏控制 + WAKE_LOCK，后台/锁屏续播） */
+/** 高频真实进度同步（仅位置；服务端不重建通知） */
+export function syncRadioPosition(positionSec: number) {
+  if (Platform.OS !== 'android') return;
+  try {
+    (RadioServiceModule as any).syncPosition(Number(positionSec) || 0);
+  } catch {}
+}
+
 export function startRadioForeground(info: string | RadioMediaInfo) {
   if (Platform.OS !== 'android' || !RadioServiceModule?.updateMedia) return;
   if (typeof info === 'string') {

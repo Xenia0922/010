@@ -148,6 +148,12 @@ public class RadioForegroundService extends Service {
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
+    // 高频真实进度：只同步位置到会话（跳过字段/通知重建，避免 500ms×startForeground 开销）
+    if (intent != null && intent.getBooleanExtra("tickOnly", false)) {
+      if (intent.hasExtra("position")) position = (long) (intent.getDoubleExtra("position", 0) * 1000);
+      if (isPlaying) pushSessionState();
+      return START_NOT_STICKY;
+    }
     if (intent != null) {
       if (intent.hasExtra("title")) title = intent.getStringExtra("title") == null ? "" : intent.getStringExtra("title");
       if (intent.hasExtra("artist")) artist = intent.getStringExtra("artist") == null ? "" : intent.getStringExtra("artist");

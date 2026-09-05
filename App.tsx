@@ -10,7 +10,7 @@ import { fetchJson } from './src/utils/network';
 import { loadCachedMemberData } from './src/services/memberData';
 import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
-import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioStopRequested, onRadioControlRequested } from './src/native/LivePlayer';
+import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioStopRequested, onRadioControlRequested , syncRadioPosition } from './src/native/LivePlayer';
 import { ensureNotificationPermission } from './src/utils/notifications';
 import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
@@ -145,6 +145,14 @@ function MusicForegroundBridge() {
   // 媒体通知（MediaStyle 控制）：只在 切歌/状态变化 时更新通知（不再每 5s 重建——
   // ColorOS 媒体卡疑似每次通知重建都重置进度观感；进度由服务端 1s ticker 持续推送 session）
   const lastNotifySig = useRef('');
+  // 真实位置 500ms 同步到系统会话（对齐 Salt/椒盐节奏；不重建通知）
+  useEffect(() => {
+    if (playbackState !== 'playing') return;
+    const id = setInterval(() => {
+      try { syncRadioPosition(useMusicPlayerStore.getState().position); } catch {}
+    }, 500);
+    return () => clearInterval(id);
+  }, [playbackState]);
   useEffect(() => {
     if (playbackState === 'playing') {
       const st = useMusicPlayerStore.getState();
