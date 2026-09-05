@@ -34,6 +34,11 @@ export function exoControl(cmd: 'pause' | 'resume' | 'seek' | 'stop' | 'next' | 
   } catch {}
 }
 
+// 原生 Exo 激活标记：激活后旧的自管 MediaSession 服务必须停（避免双会话，ColorOS 绑定旧的→依旧不刷新）
+let nativeExoActive = false;
+export const setNativeExoActive = (v: boolean) => { nativeExoActive = v; };
+export const isNativeExoActive = () => nativeExoActive;
+
 /** 订阅事件：progress/ended/error/cmd */
 export function subscribeExo(cb: (type: string, payload: any) => void): () => void {
   if (Platform.OS !== 'android') return () => {};

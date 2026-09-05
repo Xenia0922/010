@@ -11,6 +11,7 @@ import { loadCachedMemberData } from './src/services/memberData';
 import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
 import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioStopRequested, onRadioControlRequested , syncRadioPosition } from './src/native/LivePlayer';
+import { subscribeExo, setNativeExoActive, isNativeExoActive } from './src/native/RadioExo';
 import { ensureNotificationPermission } from './src/utils/notifications';
 import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
@@ -131,6 +132,19 @@ function currentLyricIndex(lines: Array<{ time: number; text: string }>, pos: nu
 }
 
 function MusicForegroundBridge() {
+  // M2：Exo 原生会话激活时，旧自管 MediaSession 服务立即停用（双会话会让 ColorOS 绑旧会话）
+  useEffect(() => subscribeExo((type, p: any) => {
+    try {
+      if (type === 'progress' && p?.playing) {
+        if (!isNativeExoActive()) {
+          setNativeExoActive(true);
+          stopRadioForeground();
+        }
+      } else if (type === 'error') {
+        setNativeExoActive(false);
+      }
+    } catch {}
+  }), []);
   // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
@@ -155,6 +169,7 @@ function MusicForegroundBridge() {
   }, [playbackState]);
   useEffect(() => {
     if (playbackState === 'playing') {
+      if (isNativeExoActive()) return; // 原生会话负责系统卡；旧桥不掺和
       const st = useMusicPlayerStore.getState();
       const track = st.queue[st.currentIndex];
       const sig = `${st.currentIndex}|${playbackState}|${st.url || ''}`;
@@ -192,6 +207,7 @@ function MusicForegroundBridge() {
         try { logInfo(`[media] notify perm rejected: ${String(err && err.message || err).slice(0, 120)}`, 'media'); } catch {}
       });
     } else if (playbackState === 'paused') {
+      if (isNativeExoActive()) return; // 原生会话已接管暂停态
       // 暂停态必须同步给服务（isPlaying=false + PAUSED 会话 + 暂停图标）：
       // 否则服务/系统一直以为在播 → ColorOS 上播放/暂停按钮失效、UI 不重绘
       const st = useMusicPlayerStore.getState();
