@@ -186,6 +186,10 @@ public class YayaExoService extends Service {
     String action = intent.getAction();
     if (ACTION_PLAY_QUEUE.equals(action)) {
       try {
+        // ⚠️ startForegroundService 5s 契约：解析 JSON/建会话可能耗时，先占位进前台（防 RemoteServiceException）
+        try {
+          startForeground(NOTIFICATION_ID, minimalFg(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+        } catch (Throwable ignored) {}
         String hJson = intent.getStringExtra("headers");
         Map<String, String> nh = new HashMap<>();
         if (hJson != null && !hJson.isEmpty()) {
@@ -251,7 +255,7 @@ public class YayaExoService extends Service {
       String cmd = intent.getStringExtra("cmd");
       if (exo == null) {
         try {
-          startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+          startForeground(NOTIFICATION_ID, minimalFg(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         } catch (Throwable ignored) {}
         return START_NOT_STICKY;
       }
@@ -279,6 +283,28 @@ public class YayaExoService extends Service {
 
   private boolean isPlaying() {
     return exo != null && exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED;
+  }
+
+  /** 5s 契约占位通知（最快构建，随后由 buildNotification 覆盖更新） */
+  private Notification minimalFg() {
+    try {
+      return new Notification.Builder(this, CHANNEL_ID)
+          .setSmallIcon(R.mipmap.ic_launcher)
+          .setContentTitle("牙牙消息")
+          .setContentText("正在播放")
+          .setCategory(Notification.CATEGORY_TRANSPORT)
+          .setOngoing(true)
+          .setOnlyAlertOnce(true)
+          .build();
+    } catch (Throwable t) {
+      try {
+        return new Notification.Builder(this)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("牙牙消息").setContentText("正在播放").build();
+      } catch (Throwable t2) {
+        return null;
+      }
+    }
   }
 
   private void startPolling() {

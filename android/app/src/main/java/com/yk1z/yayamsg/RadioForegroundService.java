@@ -167,6 +167,15 @@ public class RadioForegroundService extends Service {
       return START_NOT_STICKY;
     }
     if (intent != null) {
+      // ⚠️ startForegroundService 5s 契约：解析/封面 decode 可能耗时，先占位进前台
+      // （旧实现解析完才 startForeground → buildNotification/解码慢或抛错即 RemoteServiceException 崩溃）
+      try {
+        if (Build.VERSION.SDK_INT >= 29) {
+          startForeground(NOTIFICATION_ID, buildMinimalNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+        } else {
+          startForeground(NOTIFICATION_ID, buildMinimalNotification());
+        }
+      } catch (Throwable ignored) {}
       if (intent.hasExtra("title")) title = intent.getStringExtra("title") == null ? "" : intent.getStringExtra("title");
       if (intent.hasExtra("artist")) artist = intent.getStringExtra("artist") == null ? "" : intent.getStringExtra("artist");
       if (intent.hasExtra("album")) album = intent.getStringExtra("album") == null ? "" : intent.getStringExtra("album");
@@ -210,6 +219,32 @@ public class RadioForegroundService extends Service {
       }
     }
     return START_NOT_STICKY;
+  }
+
+  /** 5s 契约占位通知（无封面/歌词，最快构建） */
+  private Notification buildMinimalNotification() {
+    try {
+      Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+          ? new Notification.Builder(this, CHANNEL_ID)
+          : new Notification.Builder(this);
+      b.setSmallIcon(R.mipmap.ic_launcher)
+          .setContentTitle("牙牙消息")
+          .setContentText("后台播放")
+          .setCategory(Notification.CATEGORY_TRANSPORT)
+          .setVisibility(Notification.VISIBILITY_PUBLIC)
+          .setOngoing(true)
+          .setOnlyAlertOnce(true);
+      return b.build();
+    } catch (Throwable t) {
+      // channel 缺失等极端情况：给系统一个无渠道旧版通知仍满足契约
+      try {
+        return new Notification.Builder(this)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("牙牙消息").setContentText("后台播放").build();
+      } catch (Throwable t2) {
+        return null;
+      }
+    }
   }
 
   /** 后台下载封面图（4s 超时，失败静默保留无图态） */

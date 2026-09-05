@@ -1,5 +1,6 @@
 import { DeviceEventEmitter, NativeModules, Platform, requireNativeComponent, ViewProps } from 'react-native';
 import { t } from '../i18n';
+import { isNativeExoActive } from './RadioExo';
 
 const { LivePlayerModule, RadioServiceModule } = NativeModules;
 
@@ -73,14 +74,19 @@ export interface RadioMediaInfo {
 /** 开播/更新媒体通知：启动前台保活服务（MediaStyle 通知栏控制 + WAKE_LOCK，后台/锁屏续播） */
 /** 高频真实进度同步（仅位置；服务端不重建通知） */
 export function syncRadioPosition(positionSec: number) {
+  // Exo 原生会话接管系统卡后，旧自管服务必须保持停用（防双会话/竞态重启导致
+  // startForegroundService 5s 未 startForeground → RemoteServiceException 崩溃，20:41 实测）
+  if (isNativeExoActive()) return;
   if (Platform.OS !== 'android') return;
   try {
     (RadioServiceModule as any).syncPosition(Number(positionSec) || 0);
   } catch {}
 }
 
-export function startRadioForeground(info: string | RadioMediaInfo) {
+export function startRadioForeground(info: string | RadioMediaInfo, force = false) {
   if (Platform.OS !== 'android' || !RadioServiceModule?.updateMedia) return;
+  // Exo 激活时禁止旧服务启动（force=true 仅供电台 RoomRadio 使用——电台播时 Exo 已被互斥暂停）
+  if (!force && isNativeExoActive()) return;
   if (typeof info === 'string') {
     RadioServiceModule.updateMedia(info, '', false, 0, 0);
     return;
@@ -102,6 +108,7 @@ export function startRadioForeground(info: string | RadioMediaInfo) {
  * 独立于 5s 节流的元数据通道：只在歌词行切换时调用（每秒最多几次，开销极小）。
  */
 export function updateRadioLyric(text: string) {
+  if (isNativeExoActive()) return; // 同 guard：Exo 会话接管时不碰旧服务
   if (Platform.OS !== 'android' || !RadioServiceModule?.updateLyric) return;
   RadioServiceModule.updateLyric(String(text || ''));
 }

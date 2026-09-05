@@ -131,7 +131,7 @@ export default function RoomRadioScreen() {
     setPlaying(true);
     // 前台保活：通知栏 + WAKE_LOCK，后台/锁屏续播，通知可一键停止
     // （先请求 Android 13+ 通知权限，否则前台服务通知不可见，无法从通知栏停止）
-    ensureNotificationPermission().then(() => startRadioForeground(member.ownerName || '')).catch(() => {});
+    ensureNotificationPermission().then(() => startRadioForeground(member.ownerName || '', true)).catch(() => {});
   };
 
   /** 播放期间每 5 分钟后台取新流：wsSecret 签名过期/断流时自动换流 */
