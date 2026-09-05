@@ -363,6 +363,8 @@ export const MusicEngine = {
       console.warn('[MusicEngine] togglePause blocked: invalid url', s.url);
       return;
     }
+    // 加载/解析中（切歌/起播）不接受切换：store 马上会进入 playing，防误翻转为 paused/playing
+    if (s.playbackState === 'loading') return;
     const willPlay = s.playbackState !== 'playing';
     s.setPlaybackState(willPlay ? 'playing' : 'paused');
     if (willPlay && s.queue[s.currentIndex] && (!s.lyrics || s.lyrics.length === 0)) {

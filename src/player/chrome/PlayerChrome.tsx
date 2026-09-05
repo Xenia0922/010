@@ -168,15 +168,9 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     }, 320);
   }, [showControls]);
 
-  if (!source) return null;
-
-  const playing = state === 'playing';
-  // 直播判定 = kind 或流形态（rtmp/rtmps/.flv 铁定直播）：防止 kind 误标成 vod 时直播
-  // 出现可拖进度条（拖动 seek 直播流 → RNV 原生异常闪退）与错误的时间样式
-  const _u = String((source && source.url) || '').toLowerCase();
-  const isLive = source.kind === 'live' || _u.startsWith('rtmp://') || _u.startsWith('rtmps://') || _u.includes('.flv');
   // 播放器内下载（替代长按）：点播/回放/音频可下载；HLS 分段与直播不提供
-  const canDownload = !isLive && !!source?.url && /^https?:/i.test(source.url) && !/\.m3u8/i.test(source.url);
+  // ⚠️ hooks 必须在 line `if (!source) return null`（更下方）之前：source 短暂为空时
+  // 早退会导致 hook 数变化 → "Rendered more hooks"（直播首帧/换源实测触发）
   const showToast = useUiStore((s) => s.showToast);
   const runDownload = useCallback(async () => {
     const s = usePlayerStore.getState();
@@ -193,11 +187,24 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
     }
     showControls();
   }, [showToast, t, showControls]);
-  // 「更多」面板动作 = 页面传入 extraActions + 点播下载（放首位）
+  // 「更多」面板动作 = 页面传入 extraActions + 点播下载（放首位）；source 可能为空 → 短路保护
+  const downloadAvailable = !!source
+    && source.kind !== 'live'
+    && !/^rtmps?:/i.test(String(source.url || ''))
+    && /^https?:/i.test(source.url)
+    && !/\.m3u8/i.test(source.url);
   const moreActions = useMemo(() => {
-    if (!canDownload) return extraActions;
+    if (!downloadAvailable) return extraActions;
     return [{ key: 'download', icon: 'download', label: t('下载'), onPress: runDownload } as any, ...extraActions];
-  }, [canDownload, extraActions, runDownload, t]);
+  }, [downloadAvailable, extraActions, runDownload, t]);
+
+  if (!source) return null;
+
+  const playing = state === 'playing';
+  // 直播判定 = kind 或流形态（rtmp/rtmps/.flv 铁定直播）：防止 kind 误标成 vod 时直播
+  // 出现可拖进度条（拖动 seek 直播流 → RNV 原生异常闪退）与错误的时间样式
+  const _u = String((source && source.url) || '').toLowerCase();
+  const isLive = source.kind === 'live' || _u.startsWith('rtmp://') || _u.startsWith('rtmps://') || _u.includes('.flv');
   // 卡片内嵌态（inline 且未全屏）：不叠任何控制坞，点击即进全屏
   const cardMode = inline && !fullscreen;
   const progRatio = duration > 0 ? Math.max(0, Math.min(1, position / duration)) : 0;

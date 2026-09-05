@@ -11,7 +11,14 @@ import { loadCachedMemberData } from './src/services/memberData';
 import { prefetchR2Music } from './src/api/r2Music';
 import { initWasm, WebViewSigner } from './src/auth';
 import { startRadioForeground, stopRadioForeground, updateRadioLyric, onRadioStopRequested, onRadioControlRequested , syncRadioPosition } from './src/native/LivePlayer';
-import { subscribeExo, setNativeExoActive, isNativeExoActive } from './src/native/RadioExo';
+import {
+  subscribeExo,
+  exoPlayTrack,
+  setNativeExoActive,
+  setNativeExoDisabled,
+  isNativeExoActive,
+  isNativeExoDisabled,
+} from './src/native/RadioExo';
 import { ensureNotificationPermission } from './src/utils/notifications';
 import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
@@ -87,15 +94,110 @@ function currentLyricIndex(lines: Array<{ time: number; text: string }>, pos: nu
   return idx;
 }
 
+/** 向原生下发当前曲（切歌/恢复的全局兜底：页面未挂载时也能推；seekTarget 携带续播点） */
+async function pushExoAfterSwitch() {
+  try {
+    const st = useMusicPlayerStore.getState();
+    const url = st.url;
+    const track = st.queue[st.currentIndex];
+    // guard：本次会话已判原生不可用（error/超时）则不再尝试（RNV 兜底路径由页面 nativeOk 接管）
+    if (isNativeExoDisabled() || st.error || st.playbackState !== 'playing' || !url || !track) return;
+    setNativeExoActive(true); // 企图接管即标记（冷启 Home 恢复等首推场景，等待 progress 确认）
+    const headers = {
+      'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)',
+      Referer: 'https://h5.48.cn/',
+      Origin: 'https://h5.48.cn',
+    };
+    // 续播点：resume(记忆恢复)时引擎写入 seekTarget；切歌/点歌恒 0。消费后防重复 seek
+    let resumeAt = 0;
+    if (Number(st.seekTarget) > 0) {
+      resumeAt = Number(st.seekTarget);
+      useMusicPlayerStore.setState({ seekTarget: 0 });
+    }
+    let art = '';
+    const coverRaw = String((track as any).coverUrl || (track as any).cover || (track as any).thumbPath || '') || '';
+    if (coverRaw) {
+      try {
+        art = await Promise.race([
+          fetchCoverToFile(normalizeCoverUrl(coverRaw)),
+          new Promise<string>((res) => setTimeout(() => res(''), 1500)),
+        ]);
+      } catch { art = ''; }
+    }
+    exoPlayTrack({
+      url,
+      title: String(track.title || '音乐'),
+      artist: String((track as any).artist || (track as any).groupLabel || ''),
+      album: String((track as any).album || ''),
+      art: art || coverRaw,
+    }, resumeAt, true, headers,
+      /(gnz\.hk|gnz-music|music\.gnz)/i.test(url) ? 0.86 : 1,
+      st.playMode === 'single' ? 1 : 0);
+  } catch {}
+}
+
 function MusicForegroundBridge() {
+  // 全局滞回同步（页面无关）：系统卡/媒体键暂停恢复 → App 播放状态跟随
+  // 单向安全：paused 900ms 连续、playing 1.2s 连续才回写，杜绝 pause/resume 自激
+  const lastNativePlayingRef = useRef(false);
+  const syncPauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSyncPause = () => { if (syncPauseTimer.current) { clearTimeout(syncPauseTimer.current); syncPauseTimer.current = null; } };
+  const clearSyncResume = () => { if (syncResumeTimer.current) { clearTimeout(syncResumeTimer.current); syncResumeTimer.current = null; } };
+  const armSyncPause = () => {
+    if (syncPauseTimer.current) return;
+    syncPauseTimer.current = setTimeout(() => {
+      syncPauseTimer.current = null;
+      const s = useMusicPlayerStore.getState();
+      if (s.playbackState === 'playing' && !lastNativePlayingRef.current) s.setPlaybackState('paused');
+    }, 900);
+  };
+  const armSyncResume = () => {
+    if (syncResumeTimer.current) return;
+    syncResumeTimer.current = setTimeout(() => {
+      syncResumeTimer.current = null;
+      const s = useMusicPlayerStore.getState();
+      if (s.playbackState === 'paused' && s.queue.length && lastNativePlayingRef.current) s.setPlaybackState('playing');
+    }, 1200);
+  };
+  // 原生下发触发（全局兜底）：播放态/曲目变化 → 补推原生（页面未挂载时切歌/恢复不丢）。
+  // 与页面 push 并存；同曲重复由 service 去重（不重载/不打断）
+  const lastPushKeyRef = useRef('');
+  const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playbackStateG = useMusicPlayerStore((s) => s.playbackState);
+  const playUrlG = useMusicPlayerStore((s) => s.url);
+  const currentIndexG = useMusicPlayerStore((s) => s.currentIndex);
+  useEffect(() => {
+    if (playbackStateG !== 'playing' || !playUrlG) return;
+    const key = `${playUrlG}|${currentIndexG}`;
+    if (key === lastPushKeyRef.current) return;
+    lastPushKeyRef.current = key;
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    // 延迟到解析完成/当前 tick 稳定后再发（避免与页面同 tick 双发前一方吞 seekTarget）
+    pushTimerRef.current = setTimeout(() => { pushExoAfterSwitch().catch(() => {}); }, 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackStateG, playUrlG, currentIndexG]);
+  useEffect(() => {
+    if (playbackStateG === 'idle') {
+      lastPushKeyRef.current = '';
+      // 停止后可重新尝试原生（error/超时禁用仅限单次播放会话）
+      setNativeExoActive(false);
+      setNativeExoDisabled(false);
+    } else if (playbackStateG !== 'playing') {
+      lastPushKeyRef.current = '';
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackStateG]);
+
   // M2：Exo 原生会话事件全局单点 —— 进度/位置实时写 store（离开音乐页后台播放时也同步）、
-  // 播完自动切歌、系统卡上一首/下一首命令 —— 全部常驻，不依赖音乐页是否挂载。
-  // （MusicLibraryScreen 另有页面级订阅负责「下发确认/降级/滞回」，双方操作经 MusicEngine 引擎级节流防重复）
+  // 播完自动切歌、系统卡上一首/下一首命令、暂停恢复滞回 —— 全部常驻，不依赖音乐页挂载。
   useEffect(() => subscribeExo((type, p: any) => {
     try {
       if (type === 'progress') {
         // Exo 激活（原声在播）→ 旧自管服务立即停用（双会话会让 ColorOS 绑旧会话）
-        if (p?.playing && !isNativeExoActive()) {
+        const playingN = !!p?.playing;
+        lastNativePlayingRef.current = playingN;
+        if (playingN && !isNativeExoActive()) {
           setNativeExoActive(true);
           stopRadioForeground();
         }
@@ -103,17 +205,37 @@ function MusicForegroundBridge() {
         const st = useMusicPlayerStore.getState();
         if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
         if (typeof p?.position === 'number') st.setPosition(p.position);
+        if (playingN) {
+          clearSyncPause();
+          armSyncResume();
+        } else {
+          clearSyncResume();
+          armSyncPause();
+        }
       } else if (type === 'ended') {
-        if (useMusicPlayerStore.getState().playbackState === 'playing') MusicEngine.next();
+        clearSyncPause();
+        clearSyncResume();
+        if (useMusicPlayerStore.getState().playbackState === 'playing') {
+          // 播完自动切歌：watch effect 会在 url 就绪后补发原生
+          MusicEngine.next().catch(() => {});
+        }
       } else if (type === 'cmd') {
         const c = String(p?.cmd || '');
-        if (c === 'next') MusicEngine.next();
-        else if (c === 'prev') MusicEngine.prev();
+        if (c === 'next') MusicEngine.next().catch(() => {});
+        else if (c === 'prev') MusicEngine.prev().catch(() => {});
       } else if (type === 'error') {
-        setNativeExoActive(false);
+        clearSyncPause();
+        clearSyncResume();
+        setNativeExoDisabled(true); // 本会话原生判不可用（RNV 降级路径接管）
       }
     } catch {}
   }), []);
+  useEffect(() => () => {
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    clearSyncPause();
+    clearSyncResume();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {

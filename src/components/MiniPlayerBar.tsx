@@ -9,7 +9,6 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   GestureResponderEvent,
@@ -48,7 +47,8 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const playUrl = useMusicPlayerStore((s) => s.url);
 
   const track = queue[currentIndex] || null;
-  const isPlaying = playbackState === 'playing';
+  // 切歌/加载(loading)瞬间也保持「暂停」图标：否则 loading→playing 会让播放键闪「播放」动画
+  const showPause = playbackState === 'playing' || playbackState === 'loading';
   const progress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
 
   const progRef = useRef<View>(null);
@@ -130,7 +130,7 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   ).current;
 
   // 唱片旋转：模块级单例（见 useVinylSpin）——跨详情页重进有记忆，切歌归零，暂停冻结。
-  const spinValue = useVinylSpin(track?.id, isPlaying);
+  const spinValue = useVinylSpin(track?.id, playbackState === 'playing');
   const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   const panResponder = useRef(
@@ -237,22 +237,16 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
               color={palette.labelSecondary}
             />
           </Pressable>
-          <Pressable onPress={handlePrev} onPressIn={pressIn} onPressOut={pressOut} style={styles.smallBtn}>
+          <Pressable onPress={handlePrev} onPressIn={pressIn} onPressOut={pressOut} style={styles.smallCtrlBtn}>
             <Icon name="skip-previous" size={26} color={palette.label} />
           </Pressable>
           <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <Pressable onPress={handleToggle} onPressIn={pressIn} onPressOut={pressOut} style={styles.playBtn}>
-              {playbackState === 'loading' ? (
-                <View style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
-                  <ActivityIndicator size="small" color={palette.tint} />
-                </View>
-              ) : (
-                <Icon name={isPlaying ? 'pause-circle' : 'play-circle'} size={36} color={palette.tint} />
-              )}
+              <Icon name={showPause ? 'pause-circle' : 'play-circle'} size={36} color={palette.tint} />
             </Pressable>
           </Animated.View>
-          <Pressable onPress={handleNext} onPressIn={pressIn} onPressOut={pressOut} style={styles.playBtn}>
-            <Icon name="skip-next-circle" size={32} color={palette.tint} />
+          <Pressable onPress={handleNext} onPressIn={pressIn} onPressOut={pressOut} style={styles.smallCtrlBtn}>
+            <Icon name="skip-next" size={26} color={palette.label} />
           </Pressable>
         </View>
       </Pressable>
@@ -288,6 +282,6 @@ const styles = StyleSheet.create({
   info: { flex: 1, minWidth: 0 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 0 },
   playBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
-  smallBtn: { width: 34, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  smallCtrlBtn: { width: 34, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
   modeBtn: { width: 34, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
 });

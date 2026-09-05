@@ -20,7 +20,7 @@ import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import MiniPlayerBar from '../components/MiniPlayerBar';
 import FullScreenPlayer from '../components/FullScreenPlayer';
 import { MusicEngine, mediaUrl as buildMediaUrl, isPlayableHost } from '../services/musicPlayer';
-import { exoPlayTrack, exoControl, subscribeExo } from '../native/RadioExo';
+import { exoPlayTrack, exoControl, subscribeExo, setNativeExoDisabled } from '../native/RadioExo';
 import { errorMessage } from '../utils/data';
 import { logError } from '../utils/runtimeLog';
 import { fetchCoverToFile, normalizeCoverUrl } from '../utils/coverToFile';
@@ -320,42 +320,9 @@ export default function MusicLibraryScreen() {
   const armedUrlRef = useRef('');
   /** 最近一次收到原生 progress 的时间戳（判断原生活跃度，失联 >8s 允许重推） */
   const lastProgressTsRef = useRef(0);
-  /** cmd(next/prev) 去抖：双会话都转发切歌命令，300ms 内只认一次 */
+  /** cmd(next/prev) 去抖：双监听器都转发切歌命令，300ms 内只认一次 */
   const cmdLastTsRef = useRef(0);
-  /** 原生最近一次 progress 的 playing 值（滞回同步判据） */
-  const lastNativePlayingRef = useRef(false);
-  /** 系统卡暂停 → App 同步（单向滞回：原生持续暂停 900ms 才回写 store，杜绝 pause/resume 自激） */
-  const syncPauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clearSyncPause = () => {
-    if (syncPauseTimer.current) { clearTimeout(syncPauseTimer.current); syncPauseTimer.current = null; }
-  };
-  const armSyncPause = () => {
-    if (syncPauseTimer.current) return;
-    syncPauseTimer.current = setTimeout(() => {
-      syncPauseTimer.current = null;
-      const s = useMusicPlayerStore.getState();
-      // 单向安全：只把「系统/原生暂停」同步成 paused；绝不反向（避免自激振荡）。
-      // 引擎 loading/切歌中间态（playbackState≠playing）不动；原生已恢复(playing)时不动。
-      if (s.playbackState === 'playing' && !lastNativePlayingRef.current) {
-        s.setPlaybackState('paused');
-      }
-    }, 900);
-  };
-  /** 系统卡恢复播放 → App 图标跟随（1.2s 滞回，仅在原生持续在播且 store 确为 paused 才回写） */
-  const syncResumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clearSyncResume = () => {
-    if (syncResumeTimer.current) { clearTimeout(syncResumeTimer.current); syncResumeTimer.current = null; }
-  };
-  const armSyncResume = () => {
-    if (syncResumeTimer.current) return;
-    syncResumeTimer.current = setTimeout(() => {
-      syncResumeTimer.current = null;
-      const s = useMusicPlayerStore.getState();
-      if (s.playbackState === 'paused' && s.queue.length && lastNativePlayingRef.current) {
-        s.setPlaybackState('playing');
-      }
-    }, 1200);
-  };
+  // ⚠️ 暂停/恢复滞回同步已上移到 App 全局（页面无关）；本页 progress 只做「确认下发 + 降级」
 
   useEffect(() => subscribeExo((type, p: any) => {
     try {
@@ -363,27 +330,16 @@ export default function MusicLibraryScreen() {
       if (type === 'progress') {
         lastProgressTsRef.current = Date.now();
         const playingN = !!p?.playing;
-        lastNativePlayingRef.current = playingN;
         if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
         if (typeof p?.position === 'number') st.setPosition(p.position);
-        if (playingN) {
-          cancelArmTimer(); // Exo 已在原生出声 → 候选确认
-          clearSyncPause();
-          armSyncResume(); // 原生在播 → 受控同步 App（恢复播放由系统卡发起时）
-        } else {
-          // 原生暂停（系统卡/媒体键/焦点丢失）→ 单向滞回同步 App 播放图标（900ms 原生仍停才回写）
-          clearSyncResume();
-          armSyncPause();
-        }
-        // ⚠️ 不做双向回写：JS 引擎是播放状态权威；曾双向同步 → control 命令自激振荡（18:12 实测）。
-        // 恢复播放（系统卡 play）不回写：用户回 App 点播放/或 351 effect resume 自然衔接。
+        if (playingN) cancelArmTimer(); // Exo 已在原生出声 → 候选确认
+        // 播放态回写（系统卡暂停/恢复→App 图标）由 App 全局滞回处理，本页不重复
       } else if (type === 'ended') {
-        clearSyncPause();
-        clearSyncResume();
-        // 播完（单曲队列）→ 引擎切下一首（顺序/随机在 JS；单曲循环走 REPEAT_MODE_ONE 不触发 ended）
+        // 播完（单曲队列）→ 引擎切下一首（顺序/随机在 JS；单曲循环走 REPEAT_MODE_ONE 不触发 ended）。
+        // 引擎级节流防与 App 全局 ended 双发连切两首
         if (useMusicPlayerStore.getState().playbackState === 'playing') MusicEngine.next();
       } else if (type === 'cmd') {
-        // 系统卡/线控 上一首/下一首（media3 卡 + framework 镜像双入口 → 去抖防双发连切两首）
+        // 系统卡/线控 上一首/下一首（App 全局也处理；本地去抖 + 引擎节流防双发）
         const c = String(p?.cmd || '');
         if (c === 'next' || c === 'prev') {
           const now = Date.now();
@@ -396,6 +352,7 @@ export default function MusicLibraryScreen() {
         // 原生播放失败 → 本次会话降级 RNV（Video volume/paused 由 nativeOk=false 自动接管）
         if (!nativeDisabledRef.current) {
           nativeDisabledRef.current = true;
+          setNativeExoDisabled(true); // 全局同步：App watch/全局 push 也停止尝试原生
           cancelArmTimer();
           armSeqRef.current += 1;
           setNativeState(false);
@@ -499,15 +456,14 @@ export default function MusicLibraryScreen() {
     }
   }, [seekTarget]);
 
-  // 停止/清除 → Exo stop；清 armed/候选/滞回计时，让下次同曲播放可重新走原生下发
+  // 停止/清除 → Exo stop；清 armed/候选计时；下次播放重新尝试原生（模块 disabled 由 App 全局在 idle 重置）
   useEffect(() => {
     if (playbackState === 'idle') {
       cancelArmTimer();
-      clearSyncPause();
-      clearSyncResume();
       armSeqRef.current += 1;
       armedUrlRef.current = '';
       lastProgressTsRef.current = 0;
+      nativeDisabledRef.current = false;
       try { exoControl('stop'); } catch {}
     }
   }, [playbackState]);

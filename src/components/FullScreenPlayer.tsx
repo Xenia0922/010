@@ -397,7 +397,8 @@ export default function FullScreenPlayer({ visible, onClose }: Props) {
   const toggleFavorite = useMusicPlayerStore((s) => s.toggleFavorite);
 
   const track = queue[currentIndex] || null;
-  const isPlaying = playbackState === 'playing';
+  // loading(切歌/解析)期保持暂停图标，避免按钮闪「播放」动画
+  const isPlaying = playbackState === 'playing' || playbackState === 'loading';
   const progress = duration > 0 ? position / duration : 0;
 
   // Conditional render BEFORE inner component hooks

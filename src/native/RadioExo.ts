@@ -40,8 +40,11 @@ export function exoControl(cmd: 'pause' | 'resume' | 'seek' | 'stop' | 'next' | 
 // 原生 Exo 激活标记：激活后旧的自管 MediaSession 服务必须停（避免双会话，ColorOS 绑定旧的→依旧不刷新）
 // ⚠️ 模块级裸变量：JS reload 会失步。但原生 poller 持续推 progress → 收到 progress&&playing 即自愈重新激活。
 let nativeExoActive = false;
+let nativeExoDisabled = false; // 本次会话内原生已判不可用（error/超时）→ 不再尝试（防每曲 4s 静音窗）
 export const setNativeExoActive = (v: boolean) => { nativeExoActive = v; };
 export const isNativeExoActive = () => nativeExoActive;
+export const setNativeExoDisabled = (v: boolean) => { nativeExoDisabled = v; if (v) nativeExoActive = false; };
+export const isNativeExoDisabled = () => nativeExoDisabled;
 
 /** 订阅事件：progress/ended/error/cmd */
 export function subscribeExo(cb: (type: string, payload: any) => void): () => void {

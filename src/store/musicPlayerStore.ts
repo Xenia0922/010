@@ -126,21 +126,9 @@ interface MusicPlayerState {
 }
 
 /**
- * 收藏键归并：历史版本键含 title|artist|album（三段）——用户要求「一首歌一个收藏」，
- * 收藏单位统一为 title|artist（两段）；三段旧键转两段并去重；纯 musicId 键保留。
+ * 收藏键历史：曾用 musicId / title|artist / title|artist|album（版本级）。
+ * 现收藏单位 = title|artist|album（搜到哪版收哪版）；旧键由 toggleFavorite 渐进升级/兼容。
  */
-function normalizeFavoriteKey(raw: string): string | null {
-  const v = String(raw || '');
-  if (!v) return null;
-  const parts = v.split('|');
-  // 三段键（title|artist|album）→ title|artist；两段键已是目标；无 | 的 musicId 键保留原样
-  if (parts.length >= 3) {
-    const k2 = `${parts[0]}|${parts[1]}`.trim();
-    return k2 !== '|' ? k2 : null;
-  }
-  return v.trim() || null;
-}
-
 function nextIndex(current: number, length: number, mode: PlayMode): number {
   if (length === 0) return -1;
   if (mode === 'single') return current;
