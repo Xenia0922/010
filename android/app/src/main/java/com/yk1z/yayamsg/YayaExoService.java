@@ -150,7 +150,7 @@ public class YayaExoService extends Service {
     exo.setHandleAudioBecomingNoisy(true);
     exo.addListener(playerListener);
 
-    session = new MediaSession(this, "yaya-media");
+    session = new MediaSession(this, "yaya-music");
     session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
     // media-button 接收标记：让 ColorOS 把面板/媒体键命令路由给本会话
     session.setMediaButtonReceiver(

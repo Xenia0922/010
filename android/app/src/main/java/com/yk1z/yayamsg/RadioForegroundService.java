@@ -125,7 +125,7 @@ public class RadioForegroundService extends Service {
       appIconBitmap = BitmapFactory.decodeResource(getResources(), R.mipmap.ic_launcher);
     } catch (Throwable ignored) {
     }
-    mediaSession = new MediaSession(this, "yaya-media");
+    mediaSession = new MediaSession(this, "yaya-radio");
     mediaSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
     if (Build.VERSION.SDK_INT >= 21) {
       mediaSession.setPlaybackToLocal(new android.media.AudioAttributes.Builder()

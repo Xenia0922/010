@@ -255,14 +255,14 @@ function MusicForegroundBridge() {
   useEffect(() => {
     if (playbackState !== 'playing') return;
     const id = setInterval(() => {
-      if (isNativeExoActive()) return; // 原生会话接管系统卡，旧桥不得掺和
+      if (!isNativeExoDisabled()) return; // Exo 可用（含尝试窗口）时旧桥不得掺和；仅 RNV 降级路径走旧桥
       try { syncRadioPosition(useMusicPlayerStore.getState().position); } catch {}
     }, 500);
     return () => clearInterval(id);
   }, [playbackState]);
   useEffect(() => {
     if (playbackState === 'playing') {
-      if (isNativeExoActive()) return; // 原生会话负责系统卡；旧桥不掺和
+      if (!isNativeExoDisabled()) return; // Exo 负责系统卡与通知；旧桥不掺和
       const st = useMusicPlayerStore.getState();
       const track = st.queue[st.currentIndex];
       const sig = `${st.currentIndex}|${playbackState}|${st.url || ''}`;
@@ -292,7 +292,7 @@ function MusicForegroundBridge() {
         try { logInfo(`[media] notify perm rejected: ${String(err && err.message || err).slice(0, 120)}`, 'media'); } catch {}
       });
     } else if (playbackState === 'paused') {
-      if (isNativeExoActive()) return; // 原生会话已接管暂停态
+      if (!isNativeExoDisabled()) return; // Exo 已接管暂停态（含尝试窗口）；旧桥不掺和
       // 暂停态必须同步给服务（isPlaying=false + PAUSED 会话 + 暂停图标）：
       // 否则服务/系统一直以为在播 → ColorOS 上播放/暂停按钮失效、UI 不重绘
       const st = useMusicPlayerStore.getState();
@@ -329,8 +329,8 @@ function MusicForegroundBridge() {
       lastLyricIdx.current = -1;
       return;
     }
-    if (isNativeExoActive()) {
-      // Exo 激活：旧服务已停，updateLyric 的 startForegroundService 会把旧服务拉活（双会话），跳过
+    if (!isNativeExoDisabled()) {
+      // Exo 接管（含尝试窗口）：旧服务已停，updateLyric 的 startForegroundService 会拉活旧服务（双会话），跳过
       lastLyricIdx.current = -1;
       return;
     }
