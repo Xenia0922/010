@@ -191,10 +191,36 @@ function MusicForegroundBridge() {
       }).catch((err: any) => {
         try { logInfo(`[media] notify perm rejected: ${String(err && err.message || err).slice(0, 120)}`, 'media'); } catch {}
       });
+    } else if (playbackState === 'paused') {
+      // 暂停态必须同步给服务（isPlaying=false + PAUSED 会话 + 暂停图标）：
+      // 否则服务/系统一直以为在播 → ColorOS 上播放/暂停按钮失效、UI 不重绘
+      const st = useMusicPlayerStore.getState();
+      const track = st.queue[st.currentIndex];
+      const sigP = `paused|${st.currentIndex}`;
+      if (sigP !== lastNotifySig.current && track?.title) {
+        lastNotifySig.current = sigP;
+        const st2 = useMusicPlayerStore.getState();
+        let coverP = String((st2 as any).currentTrack?.coverUrl || (track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
+        if (coverP && !/^https?:\/\//i.test(coverP)) {
+          coverP = `https://source.48.cn${coverP.startsWith('/') ? coverP : '/' + coverP}`;
+        }
+        ensureNotificationPermission().then(async () => {
+          const finalCover = await fetchCoverToFile(coverP);
+          startRadioForeground({
+            title: track?.title || '音乐',
+            cover: finalCover,
+            artist: String((track as any)?.artist || (track as any)?.groupLabel || ''),
+            album: String((track as any)?.album || ''),
+            lyric: String(st2.lyrics && st2.lyrics[currentLyricIndex(st2.lyrics, st2.position)]?.text || ''),
+            isPlaying: false,
+            position: st2.position,
+            duration: st2.duration,
+          });
+        }).catch(() => {});
+      }
     } else if (playbackState === 'idle') {
       stopRadioForeground();
     }
-    // paused 保留前台服务（通知仍在，可继续/停止）；error 由 MusicEngine 自动跳歌处理
   }, [playbackState, currentIndex, position]);
   // 歌词行变化 → 更新通知展开区歌词（行切换才发，节流无碍）
   const lyrics = useMusicPlayerStore((s) => s.lyrics);
