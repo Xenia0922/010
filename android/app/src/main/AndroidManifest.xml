@@ -34,14 +34,12 @@
         <action android:name="androidx.media3.session.MediaSessionService"/>
       </intent-filter>
     </service>
-    <service
-        android:name=".RadioMedia3Service"
-        android:exported="true"
-        android:foregroundServiceType="mediaPlayback">
+    <!-- media3 线控/媒体键：后台锁屏/蓝牙/耳机按键 → MediaButtonReceiver → 会话播放/暂停/切歌 -->
+    <receiver android:name="androidx.media3.session.MediaButtonReceiver" android:exported="true">
       <intent-filter>
-        <action android:name="androidx.media3.session.MediaSessionService"/>
+        <action android:name="android.intent.action.MEDIA_BUTTON"/>
       </intent-filter>
-    </service>
+    </receiver>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait" android:supportsPictureInPicture="true" android:resizeableActivity="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>

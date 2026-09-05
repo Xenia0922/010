@@ -23,6 +23,7 @@ import { MusicEngine, mediaUrl as buildMediaUrl, isPlayableHost } from '../servi
 import { exoPlayTrack, exoControl, subscribeExo } from '../native/RadioExo';
 import { errorMessage } from '../utils/data';
 import { logError } from '../utils/runtimeLog';
+import { fetchCoverToFile, normalizeCoverUrl } from '../utils/coverToFile';
 import { formatTimestamp, joinMeta } from '../utils/format';
 import ScreenHeader from '../components/ScreenHeader';
 import { HeaderAction } from '../components/HeaderAction';
@@ -287,6 +288,9 @@ export default function MusicLibraryScreen() {
   const [mediaReady, setMediaReady] = useState(false);
   const [showFullScreen, setShowFullScreen] = useState(false);
   useEffect(() => {
+    // Exo 原生接管时跳过 Video seek（Exo seek 由下方 nativeOk 分支的 effect 消费；
+    // 若两者都消费 seekTarget，会竞争清零 → 拖进度在原生路径失效）
+    if (seekTarget > 0 && nativeOkRef.current) return;
     if (seekTarget > 0 && mediaReady && videoRef.current && typeof videoRef.current.seek === 'function') {
       try {
         videoRef.current.seek(seekTarget);
@@ -297,10 +301,18 @@ export default function MusicLibraryScreen() {
     }
   }, [seekTarget, mediaReady]);
 
-  // ===== M2 原生 Exo 驱动（失败自动降级 RNV Video）=====
+  // ===== M2 原生 Exo 驱动（media3 会话承担系统媒体卡；失败自动降级 RNV Video）=====
+  // nativeOk=true：Exo 拥有真实声音（Video 静音暂停占位）。候选期（下发后未确认）即静音，
+  // 消除 M2 旧实现的"双音窗口"（旧逻辑等收到 progress 才停 Video，期间两路同响）。
+  // 降级：error 事件 或 下发后 4s 无任何 progress/error（服务起不来/异常无事件）→ nativeOk=false
+  // 且 nativeDisabled=true（本次 JS 会话不再尝试原生，避免每首歌都等 4s 静音窗）。
   const [nativeOk, setNativeOk] = useState(false);
   const nativeOkRef = useRef(false);
-  const nativeArmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nativeDisabledRef = useRef(false);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armSeqRef = useRef(0);
+  const setNativeState = (v: boolean) => { nativeOkRef.current = v; setNativeOk(v); };
+  const cancelArmTimer = () => { if (armTimer.current) { clearTimeout(armTimer.current); armTimer.current = null; } };
 
   useEffect(() => subscribeExo((type, p: any) => {
     try {
@@ -308,46 +320,100 @@ export default function MusicLibraryScreen() {
       if (type === 'progress') {
         if (Number(p?.duration) > 0) st.setDuration(Number(p.duration));
         if (typeof p?.position === 'number') st.setPosition(p.position);
-        if (p?.playing && !nativeOkRef.current) {
-          nativeOkRef.current = true;
-          setNativeOk(true);
-          if (nativeArmTimer.current) { clearTimeout(nativeArmTimer.current); nativeArmTimer.current = null; }
+        const playingN = !!p?.playing;
+        if (playingN) {
+          cancelArmTimer(); // Exo 已在原生出声 → 候选确认
+          // 系统控件（锁屏/流体云/线控）恢复播放 → 同步 App 内状态（Engine 的 paused 分支由 control 幂等跟随）
+          if (st.playbackState === 'paused' && st.queue.length) st.setPlaybackState('playing');
+        } else if (st.playbackState === 'playing') {
+          // 系统控件暂停 → 回写 paused（ended 前的瞬态：ended 事件先到 → MusicEngine.next 置 loading，
+          // 该 progress 到达时 playbackState 已是 loading，不会误回写）
+          st.setPlaybackState('paused');
         }
       } else if (type === 'ended') {
-        if (st.playbackState === 'playing') MusicEngine.next();
+        // 播完（单曲队列）→ 引擎切下一首（顺序/随机在 JS；单曲循环走 REPEAT_MODE_ONE 不触发 ended）
+        if (useMusicPlayerStore.getState().playbackState === 'playing') MusicEngine.next();
       } else if (type === 'cmd') {
+        // 系统卡/线控 上一首/下一首（CmdPlayer 拦截回 JS）
         const c = String(p?.cmd || '');
         if (c === 'next') MusicEngine.next();
         else if (c === 'prev') MusicEngine.prev();
       } else if (type === 'error') {
-        nativeOkRef.current = false;
-        setNativeOk(false);
+        // 原生播放失败 → 本次会话降级 RNV（Video volume/paused 由 nativeOk=false 自动接管）
+        if (!nativeDisabledRef.current) {
+          nativeDisabledRef.current = true;
+          cancelArmTimer();
+          armSeqRef.current += 1;
+          setNativeState(false);
+          try { exoControl('stop'); } catch {}
+          // Video 此前全程静音暂停（自身时钟在 0）：降级后从 store 已就绪位置续播
+          const stNow = useMusicPlayerStore.getState();
+          if (stNow.position > 0) stNow.setSeekTarget(stNow.position);
+        }
       }
     } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
-  // 推当前曲到 Exo
+  // 推当前曲到 Exo：URL/曲目变化或进入播放时下发。封面先 RN 落盘为 file://（OPPO 唯一可靠），
+  // 下载限时 1.5s，超时用原 http 直推（声音不等待；原生侧 media3 BitmapLoader 尽力拉图）
   useEffect(() => {
     if (!playUrl || playbackState !== 'playing') return;
+    if (nativeDisabledRef.current) return; // 已降级：声音全交给 Video
     const st = useMusicPlayerStore.getState();
     const tr = st.queue[st.currentIndex];
     if (!tr) return;
-    const coverRaw = String((tr as any).coverUrl || (tr as any).cover || '') || '';
-    const cover = /^https?:\/\//i.test(coverRaw) ? coverRaw : undefined;
-    exoPlayTrack({
-      url: playUrl,
-      title: String(tr.title || '音乐'),
-      artist: String((tr as any).artist || (tr as any).groupLabel || ''),
-      album: String((tr as any).album || ''),
-      art: cover,
-    }, Number(st.position) > 0 ? st.position : 0, true, {
+    const seq = ++armSeqRef.current;
+    cancelArmTimer();
+    setNativeState(true); // 立即静音 Video，杜绝双音窗口
+    const headers = {
       'User-Agent': 'PocketFans201807/7.0.41 (iPhone; iOS 16.3.1; Scale/2.00)',
       Referer: 'https://h5.48.cn/',
       Origin: 'https://h5.48.cn',
-    });
-  }, [playUrl, currentIndex, playbackState]);
+    };
+    const volume = playVolume > 0 ? playVolume : 1;
+    const repeat = playMode === 'single' ? 1 : 0;
+    const doPush = (art: string) => {
+      if (seq !== armSeqRef.current) return;
+      const st2 = useMusicPlayerStore.getState();
+      if (!st2.url || st2.url !== playUrl || st2.playbackState !== 'playing') return;
+      exoPlayTrack({
+        url: playUrl,
+        title: String(tr.title || '音乐'),
+        artist: String((tr as any).artist || (tr as any).groupLabel || ''),
+        album: String((tr as any).album || ''),
+        art,
+      }, Number(st2.position) > 0 ? st2.position : 0, true, headers, volume, repeat);
+      // 候选确认超时：Exo 正常 1-3s 内必有 progress；4s 无 → 服务没起来/异常无事件 → 降级
+      cancelArmTimer();
+      armTimer.current = setTimeout(() => {
+        if (!nativeOkRef.current && !nativeDisabledRef.current) {
+          nativeDisabledRef.current = true;
+          setNativeState(false);
+          try { exoControl('stop'); } catch {}
+          const stNow = useMusicPlayerStore.getState();
+          if (stNow.position > 0) stNow.setSeekTarget(stNow.position);
+          showToast(t('已切换兼容播放器'));
+        }
+      }, 4000);
+    };
+    const coverRaw = String((tr as any).coverUrl || (tr as any).cover || (tr as any).thumbPath || '') || '';
+    if (!coverRaw) { doPush(''); return; }
+    (async () => {
+      let art = '';
+      try {
+        art = await Promise.race([
+          fetchCoverToFile(normalizeCoverUrl(coverRaw)),
+          new Promise<string>((res) => setTimeout(() => res(''), 1500)),
+        ]);
+      } catch { art = ''; }
+      doPush(art || String((tr as any).coverUrl || (tr as any).cover || ''));
+    })();
+    // deps 不含 playbackState：暂停→恢复（同曲）走 control resume 原位续播，避免 setMediaItems 重缓冲
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playUrl, currentIndex, playMode, playVolume]);
 
-  // 播放/暂停同步 Exo
+  // 播放/暂停同步 Exo（原生路径；Video 路径由 store 自身状态驱动）
   useEffect(() => {
     if (!nativeOkRef.current) return;
     if (playbackState === 'paused') exoControl('pause');
@@ -362,9 +428,13 @@ export default function MusicLibraryScreen() {
     }
   }, [seekTarget]);
 
-  // 停止/清除 → Exo stop
+  // 停止/清除 → Exo stop；清候选计时并让下次开播可重新尝试原生（nativeDisabled 才保持降级）
   useEffect(() => {
-    if (playbackState === 'idle' && nativeOkRef.current) exoControl('stop');
+    if (playbackState === 'idle') {
+      cancelArmTimer();
+      armSeqRef.current += 1;
+      try { exoControl('stop'); } catch {}
+    }
   }, [playbackState]);
 
   const playSong = (item: any) => {

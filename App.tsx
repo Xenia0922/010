@@ -19,7 +19,7 @@ import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
 import { NOTICE_URL } from './src/constants';
 import { initRuntimeLog, logCrash, logInfo } from './src/utils/runtimeLog';
-import * as FileSystem from 'expo-file-system/legacy';
+import { fetchCoverToFile, normalizeCoverUrl } from './src/utils/coverToFile';
 import { usePalette } from './src/theme/colors';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { useSafeAreaInsets } from './src/hooks/useSafeAreaInsets';
@@ -66,51 +66,7 @@ function installGlobalErrorHandler() {
   });
 }
 
-// 封面落盘为本地文件：RN 侧下载（有 UA/网络栈与音乐库同源可加载）→ file:// 给服务 decodeFile，
-// 绕开 OPPO ColorOS 对 Java 侧联网/dataURI 的兼容问题。按 URL 缓存避免 5s 重复下载。
-const coverDataCache = new Map<string, string>();
-let coverDirReady: Promise<boolean> | null = null;
-function ensureCoverDir(): Promise<boolean> {
-  if (!coverDirReady) {
-    coverDirReady = (async () => {
-      try {
-        const dir = `${FileSystem.cacheDirectory || ''}cover/`;
-        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-        return true;
-      } catch {
-        return false;
-      }
-    })();
-  }
-  return coverDirReady;
-}
-function coverFileFor(url: string): string {
-  let h = 0;
-  for (let i = 0; i < url.length; i++) h = (h * 31 + url.charCodeAt(i)) >>> 0;
-  const ext = /\.png([?#]|$)/i.test(url) ? 'png' : 'jpg';
-  return `${FileSystem.cacheDirectory || ''}cover/notif_${h.toString(36)}.${ext}`;
-}
-async function fetchCoverToFile(coverUrl: string): Promise<string> {
-  if (!coverUrl) return '';
-  if (coverUrl.startsWith('file://') || coverUrl.startsWith('data:')) return coverUrl;
-  const hit = coverDataCache.get(coverUrl);
-  if (hit) return hit;
-  try {
-    await ensureCoverDir();
-    const local = coverFileFor(coverUrl);
-    const res: any = await Promise.race([
-      FileSystem.downloadAsync(coverUrl, local),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('cover timeout')), 7000)),
-    ]);
-    if (res && (res.status === 200 || res.status === undefined)) {
-      coverDataCache.set(coverUrl, local);
-      return local;
-    }
-  } catch {
-    // 下载失败：降级原 URL（服务端仍有单流网络回退 + 160/500 链）
-  }
-  return coverUrl;
-}
+// 封面落盘逻辑已抽至 src/utils/coverToFile.ts（音乐页 Exo art 与旧通知共用，行为与历史一致）
 
 installGlobalErrorHandler();
 initRuntimeLog().catch(() => {});
@@ -159,10 +115,12 @@ function MusicForegroundBridge() {
   // 媒体通知（MediaStyle 控制）：只在 切歌/状态变化 时更新通知（不再每 5s 重建——
   // ColorOS 媒体卡疑似每次通知重建都重置进度观感；进度由服务端 1s ticker 持续推送 session）
   const lastNotifySig = useRef('');
-  // 真实位置 500ms 同步到系统会话（对齐 Salt/椒盐节奏；不重建通知）
+  // 真实位置 500ms 同步到旧自管会话（仅电台/RNV 降级路径；Exo 激活后旧服务已停，禁止再拉活——
+  // 否则 syncPosition 的 startService 会把已 stop 的 RadioForegroundService 复活 → 双会话，ColorOS 绑旧卡死）
   useEffect(() => {
     if (playbackState !== 'playing') return;
     const id = setInterval(() => {
+      if (isNativeExoActive()) return; // 原生会话接管系统卡，旧桥不得掺和
       try { syncRadioPosition(useMusicPlayerStore.getState().position); } catch {}
     }, 500);
     return () => clearInterval(id);
@@ -175,15 +133,7 @@ function MusicForegroundBridge() {
       const sig = `${st.currentIndex}|${playbackState}|${st.url || ''}`;
       if (sig === lastNotifySig.current && track?.title) return;
       lastNotifySig.current = sig;
-      let cover = String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
-      // 相对路径补全为绝对地址（source.48.cn），否则通知封面下载失败 → 系统控件无图
-      if (cover && !/^https?:\/\//i.test(cover)) {
-        cover = `https://source.48.cn${cover.startsWith('/') ? cover : '/' + cover}`;
-      }
-      // 锁屏/媒体卡封面：160x160 → 500x500 高清缩略（保留 resize 结构；直接取原图在该站 404）
-      if (/resize_\d+x\d+/i.test(cover)) {
-        cover = cover.replace(/resize_\d+x\d+/i, 'resize_500x500');
-      }
+      const cover = normalizeCoverUrl(String((track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || ''));
       const artistText = String((track as any)?.artist || (track as any)?.groupLabel || '');
       const albumText = String((track as any)?.album || '');
       const lyrIdx = currentLyricIndex(st.lyrics, st.position);
@@ -216,10 +166,7 @@ function MusicForegroundBridge() {
       if (sigP !== lastNotifySig.current && track?.title) {
         lastNotifySig.current = sigP;
         const st2 = useMusicPlayerStore.getState();
-        let coverP = String((st2 as any).currentTrack?.coverUrl || (track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || '') || '';
-        if (coverP && !/^https?:\/\//i.test(coverP)) {
-          coverP = `https://source.48.cn${coverP.startsWith('/') ? coverP : '/' + coverP}`;
-        }
+        const coverP = normalizeCoverUrl(String((st2 as any).currentTrack?.coverUrl || (track as any)?.coverUrl || (track as any)?.cover || (track as any)?.thumbPath || ''));
         ensureNotificationPermission().then(async () => {
           const finalCover = await fetchCoverToFile(coverP);
           startRadioForeground({
@@ -244,6 +191,11 @@ function MusicForegroundBridge() {
   const playing = playbackState === 'playing';
   useEffect(() => {
     if (!playing) {
+      lastLyricIdx.current = -1;
+      return;
+    }
+    if (isNativeExoActive()) {
+      // Exo 激活：旧服务已停，updateLyric 的 startForegroundService 会把旧服务拉活（双会话），跳过
       lastLyricIdx.current = -1;
       return;
     }

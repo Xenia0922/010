@@ -59,14 +59,16 @@ public class RadioExoModule extends ReactContextBaseJavaModule {
   }
 
   @ReactMethod
-  public void playQueue(String queueJson, int index, double positionSec, boolean playing, String headersJson) {
+  public void playQueue(String queueJson, int index, double positionSec, boolean playing, String headersJson, double volume, int repeat) {
     Intent i = new Intent(getReactApplicationContext(), YayaExoService.class)
         .setAction(YayaExoService.ACTION_PLAY_QUEUE)
         .putExtra("queue", queueJson == null ? "[]" : queueJson)
         .putExtra("index", Math.max(0, index))
         .putExtra("position", positionSec)
         .putExtra("playing", playing)
-        .putExtra("headers", headersJson == null ? "{}" : headersJson);
+        .putExtra("headers", headersJson == null ? "{}" : headersJson)
+        .putExtra("volume", Math.max(0.0, Math.min(1.0, volume)))
+        .putExtra("repeat", Math.max(0, repeat));
     send(i);
   }
 
@@ -75,6 +77,7 @@ public class RadioExoModule extends ReactContextBaseJavaModule {
     Intent i = new Intent(getReactApplicationContext(), YayaExoService.class)
         .putExtra("cmd", cmd)
         .putExtra("position", positionSec);
+    if ("repeat".equals(cmd)) i.putExtra("repeat", (int) positionSec); // repeat 模式：0 顺序 / 1 单曲循环
     send(i);
   }
 }
