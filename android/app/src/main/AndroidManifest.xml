@@ -26,6 +26,22 @@
     <!-- 电台前台保活服务：纯音频模式下后台/锁屏续播 + 通知栏停止按钮 -->
     <service android:name=".RadioForegroundService" android:exported="false" android:stopWithTask="true" android:foregroundServiceType="mediaPlayback"/>
     <receiver android:name=".RadioMediaReceiver" android:exported="false"/>
+    <service
+        android:name=".YayaExoService"
+        android:exported="true"
+        android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService"/>
+      </intent-filter>
+    </service>
+    <service
+        android:name=".RadioMedia3Service"
+        android:exported="true"
+        android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService"/>
+      </intent-filter>
+    </service>
     <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait" android:supportsPictureInPicture="true" android:resizeableActivity="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
