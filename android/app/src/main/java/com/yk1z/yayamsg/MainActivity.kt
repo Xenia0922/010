@@ -17,6 +17,32 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onCreate")
+  }
+
+  override fun onPause() {
+    super.onPause()
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onPause")
+  }
+
+  override fun onResume() {
+    super.onResume()
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onResume")
+  }
+
+  override fun onStop() {
+    super.onStop()
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onStop")
+  }
+
+  override fun onStart() {
+    super.onStart()
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onStart")
+  }
+
+  override fun onDestroy() {
+    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onDestroy")
+    super.onDestroy()
   }
 
   /**

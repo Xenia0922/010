@@ -77,6 +77,11 @@ public class YayaExoService extends Service {
       long now = System.currentTimeMillis();
       if (now - lastNotifyMs >= 3000) {
         lastNotifyMs = now;
+        Log.i("YayaExo", "[sysdbg] poller3s pwR=" + (exo != null && exo.getPlayWhenReady())
+            + " state=" + (exo == null ? -1 : exo.getPlaybackState())
+            + " pos=" + (exo == null ? -1 : exo.getCurrentPosition())
+            + " sessionNull=" + (session == null)
+            + " url=" + lastTrackUrl);
         try {
           NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
           if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
@@ -186,6 +191,14 @@ public class YayaExoService extends Service {
   public int onStartCommand(Intent intent, int flags, int startId) {
     if (intent == null) return START_NOT_STICKY;
     String action = intent.getAction();
+    Log.i("YayaExo", "[sysdbg] onStartCommand action=" + String.valueOf(action)
+        + " cmd=" + String.valueOf(intent.getStringExtra("cmd"))
+        + " playing=" + intent.getBooleanExtra("playing", false)
+        + " exoNull=" + (exo == null)
+        + " pwR=" + (exo == null ? -1 : (exo.getPlayWhenReady() ? 1 : 0))
+        + " state=" + (exo == null ? -1 : exo.getPlaybackState())
+        + " pos=" + (exo == null ? -1 : exo.getCurrentPosition())
+        + " sessionNull=" + (session == null));
     if (ACTION_PLAY_QUEUE.equals(action)) {
       try {
         // ⚠️ startForegroundService 5s 契约：解析 JSON/建会话可能耗时，先占位进前台（防 RemoteServiceException）
@@ -412,7 +425,14 @@ public class YayaExoService extends Service {
   }
 
   @Override
+  public void onTaskRemoved(Intent rootIntent) {
+    Log.i("YayaExo", "[sysdbg] onTaskRemoved exoNull=" + (exo == null));
+    super.onTaskRemoved(rootIntent);
+  }
+
+  @Override
   public void onDestroy() {
+    Log.i("YayaExo", "[sysdbg] onDestroy");
     stopPolling();
     destroySession();
     if (exo != null) { try { exo.release(); } catch (Throwable ignored) {} exo = null; }

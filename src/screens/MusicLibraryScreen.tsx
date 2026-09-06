@@ -434,6 +434,13 @@ export default function MusicLibraryScreen() {
   // 页面挂载/卸载都应一致，避免"返回主页后系统控件才生效"的导航依赖手感）。
 
   // 播放模式（单曲循环）→ 原生 REPEAT_MODE_ONE（其余模式 Exo 播完发 ended 由 JS 引擎切歌）
+  // [sysdbg] 卸载探针：确认"音乐页→App首页"时本页确实卸载（此时原生会话不应受任何 JS 影响）
+  useEffect(() => () => {
+    try {
+      console.warn(`[sysdbg] MusicLibrary UNMOUNT url=${String(useMusicPlayerStore.getState().url || '').slice(0, 40)} state=${useMusicPlayerStore.getState().playbackState}`);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (!nativeOkRef.current) return;
     exoControl('repeat', playMode === 'single' ? 1 : 0);

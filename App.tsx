@@ -206,8 +206,13 @@ function MusicForegroundBridge() {
   // 仅当原生已知状态确实相反才下发（系统卡操作走原生回调已同步的状态不重复下发 → 防回声自激）。
   useEffect(() => {
     if (isNativeExoDisabled()) return; // RNV 降级：声音/会话由页面 Video + 旧自管服务负责
-    if (playbackStateG === 'paused' && lastNativePlayingRef.current) exoControl('pause');
-    else if (playbackStateG === 'playing' && !lastNativePlayingRef.current) exoControl('resume');
+    if (playbackStateG === 'paused' && lastNativePlayingRef.current) {
+      console.warn(`[sysdbg] mirror→pause native (lastNative=${lastNativePlayingRef.current})`);
+      exoControl('pause');
+    } else if (playbackStateG === 'playing' && !lastNativePlayingRef.current) {
+      console.warn(`[sysdbg] mirror→resume native (lastNative=${lastNativePlayingRef.current})`);
+      exoControl('resume');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackStateG]);
 
@@ -244,15 +249,18 @@ function MusicForegroundBridge() {
       } else if (type === 'ended') {
         clearSyncPause();
         clearSyncResume();
+        console.warn('[sysdbg] NATIVE ended');
         if (useMusicPlayerStore.getState().playbackState === 'playing') {
           // 播完自动切歌：watch effect 会在 url 就绪后补发原生
           MusicEngine.next().catch(() => {});
         }
       } else if (type === 'cmd') {
         const c = String(p?.cmd || '');
+        console.warn(`[sysdbg] NATIVE cmd=${c} storeState=${useMusicPlayerStore.getState().playbackState}`);
         if (c === 'next') MusicEngine.next().catch(() => {});
         else if (c === 'prev') MusicEngine.prev().catch(() => {});
       } else if (type === 'error') {
+        console.warn(`[sysdbg] NATIVE error msg=${String((p as any)?.message || '').slice(0, 120)}`);
         clearSyncPause();
         clearSyncResume();
         setNativeExoDisabled(true); // 本会话原生判不可用（RNV 降级路径接管）
@@ -268,6 +276,7 @@ function MusicForegroundBridge() {
   // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
+      console.warn(`[sysdbg] AppState→${st} music=${useMusicPlayerStore.getState().playbackState} nativeDisabled=${isNativeExoDisabled()} nativeActive=${isNativeExoActive()} lastNativePlaying=${lastNativePlayingRef.current}`);
       if (st !== 'active') flushMusicPlayerStorage();
     });
     return () => sub.remove();
