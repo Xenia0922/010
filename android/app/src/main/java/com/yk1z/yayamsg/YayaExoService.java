@@ -55,6 +55,9 @@ public class YayaExoService extends Service {
    *  修复：从音乐页返回 App 首页后再切后台，ColorOS 偶发把媒体卡绑定到过期会话/旧状态，
    *  表现为通知栏/锁屏控件"失灵"；每次前台恢复/离开前重声明一次，卡必绑到当前唯一活跃会话。 */
   public static final String ACTION_REASSERT = "yaya.exo.reassert";
+  /** 下一首/上一首单跳提示：JS 播放确立时推送，service 手动 skip 时优先本地切换
+   * （后台 JS 被 ColorOS 冻结 timer/网络时，cmd=next 事件到 JS 后异步链路永不完成 → 切歌无效） */
+  public static final String ACTION_SET_HINTS = "yaya.exo.set_hints";
   private static final String CHANNEL_ID = "yaya_radio_v3";
   private static final int NOTIFICATION_ID = 2024;
   private static final Handler h = new Handler(Looper.getMainLooper());
@@ -72,6 +75,12 @@ public class YayaExoService extends Service {
   private String album = "";
   private String artPath = "";
   private Bitmap artBitmap;
+  // skip hints（单跳）：服务端本地切歌用，结构 = {url,title,artist,album,art?,index?}
+  // index = 引擎语义下的队列下标（供 JS 恢复对账定位曲目）；-1 = 未知
+  // art = 封面 file://（JS 已落盘）；后台本地切歌直接展示，不等回前台 JS 补推
+  private String nextUrl = "", nextTitle = "", nextArtist = "", nextAlbum = "", nextArt = "";
+  private String prevUrl = "", prevTitle = "", prevArtist = "", prevAlbum = "", prevArt = "";
+  private int nextIndexHint = -1, prevIndexHint = -1;
 
   private final Runnable progressPoller = new Runnable() {
     @Override public void run() {
@@ -171,8 +180,8 @@ public class YayaExoService extends Service {
     session.setCallback(new MediaSession.Callback() {
       @Override public void onPlay() { Log.i("YayaExo", "CMD onPlay"); if (exo != null) exo.play(); }
       @Override public void onPause() { Log.i("YayaExo", "CMD onPause curPos=" + (exo == null ? -1 : exo.getCurrentPosition())); if (exo != null) exo.pause(); }
-      @Override public void onSkipToNext() { Log.i("YayaExo", "CMD onSkipToNext"); RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "next")); }
-      @Override public void onSkipToPrevious() { Log.i("YayaExo", "CMD onSkipToPrevious"); RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "prev")); }
+      @Override public void onSkipToNext() { Log.i("YayaExo", "CMD onSkipToNext"); localSkip(true); }
+      @Override public void onSkipToPrevious() { Log.i("YayaExo", "CMD onSkipToPrevious"); localSkip(false); }
       @Override public void onSeekTo(long pos) { Log.i("YayaExo", "CMD onSeekTo pos=" + pos); if (exo != null) exo.seekTo(Math.max(0, pos)); }
       @Override public void onStop() { Log.i("YayaExo", "CMD onStop"); if (exo != null) exo.pause(); }
     });
@@ -294,6 +303,14 @@ public class YayaExoService extends Service {
       } catch (Throwable ignored) {}
       Log.i("YayaExo", "[sysdbg] REASSERT pwR=" + (exo.getPlayWhenReady()) + " pos=" + exo.getCurrentPosition() + " sessionNull=" + (session == null));
       return START_NOT_STICKY;
+    } else if (ACTION_SET_HINTS.equals(action)) {
+      // JS 播放确立/状态变化时推送的 skip hint：更新槽位（不建播放器不播）
+      applySkipHints(intent.getStringExtra("next"), intent.getStringExtra("prev"));
+      if (exo == null) {
+        // 未在播还收到 hint（停播竞态残留）→ 立即停，避免 startForegroundService 5s 契约崩溃
+        try { stopSelf(); } catch (Throwable ignored) {}
+      }
+      return START_NOT_STICKY;
     } else {
       String cmd = intent.getStringExtra("cmd");
       if (exo == null) {
@@ -304,8 +321,8 @@ public class YayaExoService extends Service {
       }
       if ("pause".equals(cmd)) { exo.pause(); pushState(); }
       else if ("resume".equals(cmd)) { exo.play(); pushState(); }
-      else if ("next".equals(cmd)) { RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "next")); }
-      else if ("prev".equals(cmd)) { RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", "prev")); }
+      else if ("next".equals(cmd)) { localSkip(true); }
+      else if ("prev".equals(cmd)) { localSkip(false); }
       else if ("play_pause".equals(cmd)) {
         if (isPlaying()) { exo.pause(); } else { exo.play(); }
         pushState();
@@ -326,6 +343,123 @@ public class YayaExoService extends Service {
 
   private boolean isPlaying() {
     return exo != null && exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED;
+  }
+
+  // ---------- skip hints + 本地切歌（ColorOS 冻结后台 JS 的根治） ----------
+
+  /** JS 推来的 hint JSON：{url,title,artist,album,art?,index?}；null/空串 → 清空该方向槽位 */
+  private void applySkipHints(String nextJson, String prevJson) {
+    try {
+      if (nextJson != null && nextJson.startsWith("{")) {
+        JSONObject o = new JSONObject(nextJson);
+        String u = o.optString("url", "");
+        setNextHint(u, o.optString("title", ""), o.optString("artist", ""), o.optString("album", ""),
+            o.optString("art", ""),
+            o.has("index") ? o.optInt("index", -1) : -1);
+      } else {
+        clearNextHint();
+      }
+    } catch (Throwable t) { clearNextHint(); }
+    try {
+      if (prevJson != null && prevJson.startsWith("{")) {
+        JSONObject o = new JSONObject(prevJson);
+        String u = o.optString("url", "");
+        setPrevHint(u, o.optString("title", ""), o.optString("artist", ""), o.optString("album", ""),
+            o.optString("art", ""),
+            o.has("index") ? o.optInt("index", -1) : -1);
+      } else {
+        clearPrevHint();
+      }
+    } catch (Throwable t) { clearPrevHint(); }
+    Log.i("YayaExo", "[sysdbg] SKIP-HINTS next=" + (nextUrl.isEmpty() ? "-" : nextUrl)
+        + " prev=" + (prevUrl.isEmpty() ? "-" : prevUrl)
+        + " nextArt=" + (nextArt.isEmpty() ? "-" : nextArt)
+        + " prevArt=" + (prevArt.isEmpty() ? "-" : prevArt));
+  }
+
+  private void setNextHint(String u, String t, String a, String al, String art, int idx) {
+    nextUrl = u == null ? "" : u; nextTitle = t == null ? "" : t;
+    nextArtist = a == null ? "" : a; nextAlbum = al == null ? "" : al;
+    nextArt = art == null ? "" : art; nextIndexHint = idx;
+  }
+  private void setPrevHint(String u, String t, String a, String al, String art, int idx) {
+    prevUrl = u == null ? "" : u; prevTitle = t == null ? "" : t;
+    prevArtist = a == null ? "" : a; prevAlbum = al == null ? "" : al;
+    prevArt = art == null ? "" : art; prevIndexHint = idx;
+  }
+  private void clearNextHint() { setNextHint("", "", "", "", "", -1); }
+  private void clearPrevHint() { setPrevHint("", "", "", "", "", -1); }
+
+  /** 当前已下发曲目 url（mediaId/localConfiguration.uri 双回退，与 playQueue 同曲去重逻辑一致） */
+  private String currentMediaUrl() {
+    MediaItem cur = exo == null ? null : exo.getCurrentMediaItem();
+    if (cur == null) return null;
+    if (cur.mediaId != null && !cur.mediaId.isEmpty()) return cur.mediaId;
+    if (cur.localConfiguration != null && cur.localConfiguration.uri != null) return cur.localConfiguration.uri.toString();
+    return null;
+  }
+
+  /**
+   * 上/下一首本地切歌（后台冻结 JS 也能生效）：
+   * hint 有 url → 直接换 MediaItem 播放（同 url 视为重播 seek0），元数据/通知/会话即时更新，
+   * 并把刚离开的曲目塞进反方向槽位（一步回退即回原曲，符合引擎语义）；hint 缺失才兜底 emitJs cmd。
+   */
+  private void localSkip(boolean isNext) {
+    if (exo == null) return;
+    String u = isNext ? nextUrl : prevUrl;
+    if (u.isEmpty()) {
+      // 无可用 hint：旧路径（JS 活着时 cmd→引擎 next/prev 仍完整生效）
+      RadioExoModule.emitJs(getApplicationContext(), "cmd", mapOf("cmd", isNext ? "next" : "prev"));
+      return;
+    }
+    String nTitle = isNext ? nextTitle : prevTitle;
+    String nArtist = isNext ? nextArtist : prevArtist;
+    String nAlbum = isNext ? nextAlbum : prevAlbum;
+    String nArt = isNext ? nextArt : prevArt;
+    int nIndex = isNext ? nextIndexHint : prevIndexHint;
+    // 反方向槽位 = 刚离开的当前曲（一步 prev/next 可回原曲，含其封面）；已用方向槽位清空
+    // （无下一跳元数据，避免二次点击重放同曲；前台 JS 会即刻按新 index 重新推送）
+    if (isNext) { setPrevHint(lastTrackUrl, title, artist, album, artPath, -1); clearNextHint(); }
+    else { setNextHint(lastTrackUrl, title, artist, album, artPath, -1); clearPrevHint(); }
+    Log.i("YayaExo", "[sysdbg] LOCAL-SKIP " + (isNext ? "NEXT" : "PREV") + " url=" + u
+        + " index=" + nIndex + " from=" + lastTrackUrl + " art=" + (nArt.isEmpty() ? "-" : nArt));
+    title = nTitle; artist = nArtist; album = nAlbum; lastTrackUrl = u;
+    String curU = currentMediaUrl();
+    boolean same = curU != null && curU.equals(u);
+    try {
+      if (same) {
+        exo.seekTo(0); // 同一曲（single 重播）→ 不重载直接从头（封面不变）
+      } else {
+        exo.setMediaItems(java.util.Collections.singletonList(new MediaItem.Builder().setUri(u).build()), 0, 0);
+        exo.prepare();
+        // 换曲后套用 hint 封面（file:// 已落盘）；无/不可用 → 清旧封面防错配
+        artPath = nArt;
+        artBitmap = null;
+        if (nArt.startsWith("file://")) {
+          try { artBitmap = BitmapFactory.decodeFile(nArt.substring("file://".length())); } catch (Throwable ignored) {}
+        }
+      }
+      exo.play();
+    } catch (Throwable t) {
+      Map<String, Object> extra = new HashMap<>();
+      extra.put("message", "localSkip err " + t.getMessage());
+      RadioExoModule.emitJs(getApplicationContext(), "error", extra);
+      return;
+    }
+    pushState();
+    try {
+      NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+      if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
+    } catch (Throwable ignored) {}
+    // 通知 JS 对账（store 下标/url/歌词）；JS 冻结时事件排队，恢复后按序到达即自愈
+    Map<String, Object> ev = new HashMap<>();
+    ev.put("cmd", isNext ? "next" : "prev");
+    ev.put("url", u);
+    ev.put("title", nTitle);
+    ev.put("artist", nArtist);
+    ev.put("album", nAlbum);
+    if (nIndex >= 0) ev.put("index", (double) nIndex);
+    RadioExoModule.emitJs(getApplicationContext(), "skipped", ev);
   }
 
   /** 5s 契约占位通知（最快构建，随后由 buildNotification 覆盖更新） */

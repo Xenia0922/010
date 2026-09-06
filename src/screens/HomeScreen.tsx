@@ -525,16 +525,28 @@ export default function HomeScreen() {
   }, [navigation]);
 
   /**
-   * 继续播放：走 MusicEngine.resume() —— 保留记忆进度（position→seekTarget，
-   * Video onLoad 后 seek 回去续播），重新解析 URL 并播放。
-   * 之前直接 s.play() 会把 position/seekTarget 清零，永远从 0 开始，记忆形同虚设。
+   * 进音乐功能（最近播放卡面/播放中胶囊）：只导航进音乐库，不触发播放——
+   *  - 外部正在播 → 保持原声连续（不再二次 resume：重复解析+seekTo 会造成"暂停一下再加载"的中断感）
+   *  - 外部暂停/停止 → 保持暂停态进入，不自动开播（用户要求：没在播时进音乐功能不得自动续播）
+   */
+  const openMusicLibrary = useCallback(() => {
+    handleNav({ title: '', desc: '', route: 'MusicLibraryScreen', icon: '' });
+  }, [handleNav]);
+
+  /**
+   * 继续播放（仅显式点击胶囊时）：从记忆进度续播（position→seekTarget，resume 保留进度）。
+   * 播放中/加载中点胶囊只进音乐页（避免重启播放链路）。
    */
   const handleResumeMusic = useCallback(() => {
     const s = useMusicPlayerStore.getState();
     if (!s.queue[s.currentIndex]) return;
+    if (s.playbackState === 'playing' || s.playbackState === 'loading') {
+      openMusicLibrary();
+      return;
+    }
     MusicEngine.resume();
-    handleNav({ title: '', desc: '', route: 'MusicLibraryScreen', icon: '' });
-  }, [handleNav]);
+    openMusicLibrary();
+  }, [openMusicLibrary]);
 
   /** 关闭音乐：清播放上下文（queue 保留以便再播），idle → 停 Exo 服务与系统媒体通知 */
   const handleStopMusic = useCallback(() => {
@@ -774,7 +786,7 @@ export default function HomeScreen() {
           <View style={styles.sectionOuter}>
             <SectionHeader title={t('最近播放')} />
             <FadeInView delay={150} duration={320}>
-              <ScalePressable onPress={handleResumeMusic} pressedScale={0.97}>
+              <ScalePressable onPress={openMusicLibrary} pressedScale={0.97}>
                 <GlassCard strong padding={12} radius={20}>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <View style={[styles.musicCover, { backgroundColor: palette.tintSoft }]}>

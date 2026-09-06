@@ -80,4 +80,14 @@ public class RadioExoModule extends ReactContextBaseJavaModule {
     if ("repeat".equals(cmd)) i.putExtra("repeat", (int) positionSec); // repeat 模式：0 顺序 / 1 单曲循环
     send(i);
   }
+
+  /** 推送下一首/上一首单跳提示（后台切歌走 service 本地，不依赖 JS 异步链路） */
+  @ReactMethod
+  public void setSkipHints(String nextJson, String prevJson) {
+    Intent i = new Intent(getReactApplicationContext(), YayaExoService.class)
+        .setAction(YayaExoService.ACTION_SET_HINTS)
+        .putExtra("next", nextJson == null ? "null" : nextJson)
+        .putExtra("prev", prevJson == null ? "null" : prevJson);
+    send(i);
+  }
 }

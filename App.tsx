@@ -15,13 +15,14 @@ import {
   subscribeExo,
   exoPlayTrack,
   exoControl,
+  exoSetSkipHints,
   setNativeExoActive,
   setNativeExoDisabled,
   isNativeExoActive,
   isNativeExoDisabled,
 } from './src/native/RadioExo';
 import { ensureNotificationPermission } from './src/utils/notifications';
-import { useMusicPlayerStore, flushMusicPlayerStorage } from './src/store/musicPlayerStore';
+import { useMusicPlayerStore, flushMusicPlayerStorage, PlayMode } from './src/store/musicPlayerStore';
 import { MusicEngine } from './src/services/musicPlayer';
 import { FadeInView } from './src/components/Motion';
 import { runAutoCheckinIfNeeded } from './src/services/autoCheckin';
@@ -145,6 +146,81 @@ async function pushExoAfterSwitch() {
   } catch {}
 }
 
+// ---------- 系统卡 skip hints（上一首/下一首后台本地切歌，2026-09-06） ----------
+// 与 store.next()/prev() 相同的引擎语义（手动切歌）：
+//  - prev：回绕到队尾（idx<=0 → len-1）
+//  - next：single → 重播当前；random → 排除当前的均匀随机；其余 → (idx+1)%len
+function skipHintIndex(dir: 'next' | 'prev', cur: number, len: number, mode: PlayMode): number {
+  if (len <= 0) return -1;
+  if (dir === 'prev') return cur <= 0 ? len - 1 : cur - 1;
+  if (mode === 'single') return cur;
+  if (mode === 'random') {
+    if (len <= 1) return cur;
+    let n = Math.floor(Math.random() * (len - 1));
+    if (n >= cur) n += 1;
+    return n;
+  }
+  return (cur + 1) % len;
+}
+
+/** 封面落盘缓存：hint 目标曲封面 file://（后台本地切歌直接展示，不再等回前台 JS 补推） */
+const skipHintArts: { next: string; prev: string } = { next: '', prev: '' };
+
+/**
+ * 向 YayaExoService 推送当前播放语义下的上一首/下一首 hint（url 已解析可直接播）。
+ * 触发：播放确立/url/下标/队列/模式任一变化（MusicForegroundBridge effect）。
+ * 两段式：先无封面立即推（切歌不等待下载）→ 目标封面落盘后带 art 重推（覆盖同槽位）。
+ * 前台执行；停播/切歌竞态时丢弃不推。
+ */
+async function pushSkipHints() {
+  try {
+    const st = useMusicPlayerStore.getState();
+    if (st.playbackState !== 'playing' || !st.url || st.queue.length === 0) return;
+    const q = st.queue;
+    const ni = skipHintIndex('next', st.currentIndex, q.length, st.playMode);
+    const pi = skipHintIndex('prev', st.currentIndex, q.length, st.playMode);
+    if (ni < 0 && pi < 0) return;
+    const snapUrl = st.url;
+    const nTrack = ni >= 0 ? q[ni] : null;
+    const pTrack = pi >= 0 ? q[pi] : null;
+    const mk = (t: any, u: string | null, i: number, dir: 'next' | 'prev') =>
+      t && u
+        ? { url: u, title: String(t.title || '音乐'), artist: String(t.artist || t.groupLabel || ''), album: String(t.album || ''), index: i, art: skipHintArts[dir] }
+        : null;
+    const [nUrl, pUrl] = await Promise.all([
+      nTrack ? MusicEngine.resolvePlayUrl(nTrack) : Promise.resolve(null),
+      pTrack ? MusicEngine.resolvePlayUrl(pTrack) : Promise.resolve(null),
+    ]);
+    // 在途校验：期间已停/已切走 → 丢弃（防旧 hint 覆盖 + 防 stop 竞态 startService 崩溃）
+    const s2 = useMusicPlayerStore.getState();
+    if (s2.playbackState !== 'playing' || s2.url !== snapUrl) return;
+    // Phase 1：无封面立即推（后台切歌即时性优先）
+    exoSetSkipHints(mk(nTrack, nUrl, ni, 'next'), mk(pTrack, pUrl, pi, 'prev'));
+    // Phase 2：目标封面落盘后带 art 重推（同槽位覆盖；两首并行下载，共 2.5s 上限）
+    const coverRawOf = (t: any) => String((t && (t.coverUrl || t.cover || t.thumbPath)) || '') || '';
+    const refreshArt = async (t: any, dir: 'next' | 'prev') => {
+      if (!t) return;
+      const raw = coverRawOf(t);
+      if (!raw) return;
+      let art = '';
+      try {
+        art = await Promise.race([
+          fetchCoverToFile(normalizeCoverUrl(raw)),
+          new Promise<string>((res) => setTimeout(() => res(''), 2500)),
+        ]);
+      } catch { art = ''; }
+      if (art) skipHintArts[dir] = art;
+      const s3 = useMusicPlayerStore.getState();
+      if (s3.playbackState !== 'playing' || s3.url !== snapUrl) return;
+      exoSetSkipHints(mk(nTrack, nUrl, ni, 'next'), mk(pTrack, pUrl, pi, 'prev'));
+    };
+    await Promise.all([
+      nTrack ? refreshArt(nTrack, 'next') : Promise.resolve(),
+      pTrack ? refreshArt(pTrack, 'prev') : Promise.resolve(),
+    ]);
+  } catch {}
+}
+
 function MusicForegroundBridge() {
   // 全局滞回同步（页面无关）：系统卡/媒体键暂停恢复 → App 播放状态跟随
   // 单向安全：paused 900ms 连续、playing 1.2s 连续才回写，杜绝 pause/resume 自激
@@ -176,6 +252,8 @@ function MusicForegroundBridge() {
   const playbackStateG = useMusicPlayerStore((s) => s.playbackState);
   const playUrlG = useMusicPlayerStore((s) => s.url);
   const currentIndexG = useMusicPlayerStore((s) => s.currentIndex);
+  const queueLenG = useMusicPlayerStore((s) => s.queue.length);
+  const playModeG = useMusicPlayerStore((s) => s.playMode);
   useEffect(() => {
     if (playbackStateG !== 'playing' || !playUrlG) return;
     const key = `${playUrlG}|${currentIndexG}`;
@@ -186,6 +264,13 @@ function MusicForegroundBridge() {
     pushTimerRef.current = setTimeout(() => { pushExoAfterSwitch().catch(() => {}); }, 20);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackStateG, playUrlG, currentIndexG]);
+  // 播放确立/url/下标/队列/模式变化 → 重推 skip hints（原生本地切歌依赖，须在最新语义后推送）
+  useEffect(() => {
+    if (playbackStateG !== 'playing' || !playUrlG) return;
+    const t = setTimeout(() => { pushSkipHints().catch(() => {}); }, 40);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackStateG, playUrlG, currentIndexG, queueLenG, playModeG]);
   useEffect(() => {
     if (playbackStateG === 'idle') {
       lastPushKeyRef.current = '';
@@ -254,6 +339,35 @@ function MusicForegroundBridge() {
           // 播完自动切歌：watch effect 会在 url 就绪后补发原生
           MusicEngine.next().catch(() => {});
         }
+      } else if (type === 'skipped') {
+        // 原生已本地切歌（系统卡/媒体键在后台点按，JS 被冻结时事件排队、恢复后按序到达）：
+        // 按 hint 携带的 index 把 store 对账到目标曲，防止 UI/状态停留旧曲。
+        const urlN = String(p?.url || '');
+        console.warn(`[sysdbg] NATIVE skipped cmd=${String(p?.cmd || '')} url=${urlN.slice(0, 50)}`);
+        clearSyncPause();
+        clearSyncResume();
+        if (!urlN) return;
+        const st0 = useMusicPlayerStore.getState();
+        if (st0.queue.length === 0) return;
+        const rawIdx = Number(p?.index);
+        const idx = Number.isFinite(rawIdx) && Number.isInteger(rawIdx) && rawIdx >= 0 && rawIdx < st0.queue.length ? rawIdx : -1;
+        const track = idx >= 0 ? st0.queue[idx] : null;
+        if (idx < 0 || !track) return; // 队列与 hint 对不上（旧快照/队列被替换）→ 原生继续播，不强改 UI
+        // 使在途 playTrack 失效：防其 URL 解析完成后回写覆盖本次本地切歌
+        (MusicEngine as any)._playSeq += 1;
+        useMusicPlayerStore.setState({
+          currentIndex: idx,
+          url: urlN,
+          playbackState: 'playing',
+          position: 0,
+          duration: 0,
+          seekTarget: 0,
+          error: null,
+          lyrics: [],
+        });
+        // watch effect 会因 url|index 变化补推原生（同曲去重不重载）；这里补歌词/预热下一首
+        MusicEngine._fetchLyrics(track);
+        MusicEngine._prewarmNextTrack();
       } else if (type === 'cmd') {
         const c = String(p?.cmd || '');
         console.warn(`[sysdbg] NATIVE cmd=${c} storeState=${useMusicPlayerStore.getState().playbackState}`);

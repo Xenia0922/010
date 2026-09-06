@@ -114,6 +114,28 @@ export const MusicEngine = {
     });
   },
 
+  /**
+   * 取单曲"可立即播放"的 url（预热缓存 → 解析器，成功后入预热缓存）——
+   * 专供系统卡 skip hints 预推：前台播放确立时调用；后台冻结 JS 时原生即可本地切歌。
+   */
+  async resolvePlayUrl(track: Track): Promise<string | null> {
+    if (!track) return null;
+    const key = trackKey(track);
+    const hit = this._warmUrls.get(key);
+    if (hit) return hit;
+    this._initDefaultResolver();
+    const resolver = this._urlResolver;
+    if (!resolver) return null;
+    try {
+      const url = await resolver(track);
+      if (url && /^https?:/i.test(url) && isPlayableHost(url)) {
+        this._warmUrls.set(key, url);
+        return url;
+      }
+    } catch {}
+    return null;
+  },
+
   setUrlResolver(resolver: TrackUrlResolver) {
     this._urlResolver = resolver;
   },

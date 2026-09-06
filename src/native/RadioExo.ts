@@ -37,6 +37,22 @@ export function exoControl(cmd: 'pause' | 'resume' | 'seek' | 'stop' | 'next' | 
   } catch {}
 }
 
+/**
+ * 推送"下一首/上一首"单跳提示到原生 service（后台切歌不依赖 JS 异步链路）。
+ *
+ * 背景：ColorOS 冻结后台 JS 的 timer/网络，通知栏上/下一首若只 emit cmd=next 给 JS，
+ * 引擎的异步 playTrack（setTimeout/网络解析）在后台永不完成 → 切歌无效。
+ * 修复：JS 播放确立时把"引擎语义下的下一首/上一首 + 可直接播放的 url"（预热缓存/官方直链）
+ * 推给 YayaExoService；service 收到 onSkipToNext/Previous 时优先本地切换，JS 仅在本地无
+ * 可用 hint（或 url 相同需重播）时才兜底走 cmd 事件。
+ */
+export function exoSetSkipHints(next: ExoTrackItem | null, prev: ExoTrackItem | null) {
+  if (Platform.OS !== 'android' || !M?.setSkipHints) return;
+  try {
+    M.setSkipHints(JSON.stringify(next), JSON.stringify(prev));
+  } catch {}
+}
+
 // 原生 Exo 激活标记：激活后旧的自管 MediaSession 服务必须停（避免双会话，ColorOS 绑定旧的→依旧不刷新）
 // ⚠️ 模块级裸变量：JS reload 会失步。但原生 poller 持续推 progress → 收到 progress&&playing 即自愈重新激活。
 let nativeExoActive = false;
