@@ -111,7 +111,21 @@ export function getPlayerHtml(streamUrl: string, posterUrl?: string, initialTime
     if (startTime && startTime > 0) {
       try { video.currentTime = startTime; } catch (e) {}
     }
+    reportVideoSize();
   });
+  // 分辨率确认/切换（flv.js 起播瞬间 videoWidth 常为 0，playing/resize 后才可信）
+  video.addEventListener('resize', reportVideoSize);
+  video.addEventListener('playing', reportVideoSize);
+  // B站/公演网页直播 → 系统 PiP 比例跟随源（RN 侧收到后 setPipAspect）
+  function reportVideoSize() {
+    if (!window.ReactNativeWebView) return;
+    var w = video.videoWidth, h = video.videoHeight;
+    if (w > 0 && h > 0) {
+      try {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'videosize', width: w, height: h }));
+      } catch (e) {}
+    }
+  }
 
   // 外部控制指令（RN 控制层）：seek / 倍速 / 播放暂停
   if (window.ReactNativeWebView) {

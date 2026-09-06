@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getPlayerHtml } from '../../components/media/player';
+import { setPipAspect } from '../../utils/pip';
 import { PlayerSource } from '../types';
 
 interface Props {
@@ -76,6 +77,11 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
             onEnded();
           } else if (data.type === 'error') {
             onError(String(data.error || '').slice(0, 160) || '网页播放器错误');
+          } else if (data.type === 'videosize') {
+            // B站/公演网页内核直播：视频实际宽高 → PiP 窗口比例跟随源（默认 16:9 不匹配时裁边/黑边）
+            const w = Number(data.width) || 0;
+            const h = Number(data.height) || 0;
+            if (w > 0 && h > 0) setPipAspect(w, h);
           }
         } catch {}
       }}
