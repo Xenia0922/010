@@ -23,7 +23,7 @@ import { useMusicPlayerStore } from '../store/musicPlayerStore';
 import { usePalette, motion, makeShadows } from '../theme';
 import { useSafeAreaInsets } from '../hooks/useSafeAreaInsets';
 import { typography } from '../theme/typography';
-import { isPlayableHost, MusicEngine } from '../services/musicPlayer';
+import { MusicEngine } from '../services/musicPlayer';
 import CoverArt from './CoverArt';
 import { useI18n } from '../i18n';
 import { joinMeta } from '../utils/format';
@@ -44,7 +44,6 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const playMode = useMusicPlayerStore((s) => s.playMode);
   const duration = useMusicPlayerStore((s) => s.duration);
   const position = useMusicPlayerStore((s) => s.position);
-  const playUrl = useMusicPlayerStore((s) => s.url);
 
   const track = queue[currentIndex] || null;
   // 切歌/加载(loading)瞬间也保持「暂停」图标：否则 loading→playing 会让播放键闪「播放」动画
@@ -150,19 +149,21 @@ export default function MiniPlayerBar({ onOpenFullScreen }: Props) {
   const rawCover = (track?.coverUrl || track?.cover || track?.thumbPath || '') as string;
   const coverUri = rawCover ? (rawCover.startsWith('http') ? rawCover : `https://source.48.cn${rawCover.startsWith('/') ? rawCover : '/' + rawCover}`) : '';
 
+  // ⚠️ 不可在此处加 isPlayableHost(playUrl) 门卫：记忆恢复/暂停态 url=''（url 不持久化），
+  // 门卫会静默拦截 → MiniBar 点播放"概率不触发"；FullScreenPlayer 无此门卫故正常。
+  // togglePause() 内部已含完整保护：url 非法/空→禁止翻转，url 空且有当前曲→重新解析开播。
   const handleToggle = useCallback(() => {
     try {
-      if (!isPlayableHost(playUrl)) return;
       MusicEngine.togglePause();
     } catch {}
-  }, [playUrl]);
+  }, []);
 
   const handlePrev = useCallback(() => { try { MusicEngine.prev(); } catch {} }, []);
   const handleNext = useCallback(() => { try { MusicEngine.next(); } catch {} }, []);
   const handleMode = useCallback(() => { try { MusicEngine.cycleMode(); } catch {} }, []);
 
   // B3 修复：显隐仅由「有曲目且非 idle」决定——url 未就绪（R2 FLAC 解析慢/记忆恢复）
-  // 时 bar 保持可见（按钮由 handleToggle 内的 isPlayableHost 保护），不再闪烁消失
+  // 时 bar 保持可见（按钮由 togglePause 内部保护），不再闪烁消失
   if (!track || playbackState === 'idle') return null;
 
   return (

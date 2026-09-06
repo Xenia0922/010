@@ -8,12 +8,11 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useNavigation } from '@react-navigation/native';
-import QRCode from 'qrcode';
 import { WebView } from 'react-native-webview';
 import { useSettingsStore, useUiStore } from '../store';
 import { FadeInView } from '../components/Motion';
@@ -30,6 +29,13 @@ import { translate, useI18n } from '../i18n';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const BILI_COOKIE_KEYS = ['SESSDATA', 'bili_jct', 'DedeUserID', 'DedeUserID__ckMd5', 'sid'];
+
+/** B站登录整页地址：WebView 以桌面 UA 加载该页，页面自带二维码生成 + 轮询 + 确认后跳 crossDomain。
+ *  RN fetch 在 Android 上无法可靠覆盖 UA 头 → poll 响应拿不到 cookie url（桌面正常）；
+ *  改用整页 WebView（userAgent 属性可靠生效），等于 App 内跑一个桌面浏览器，onNavigationStateChange
+ *  抓到 crossDomain?SESSDATA=... 即保存。 */
+const BILI_DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
+const BILI_PASSPORT_LOGIN_URL = 'https://passport.bilibili.com/login';
 
 /** 从一段 search/hash 裸参数字符串里提取 B站 cookie（仅用 URLSearchParams，不依赖 Hermes 的 new URL） */
 function biliCookiesFromSearch(search = ''): string {
@@ -170,8 +176,6 @@ export default function LoginScreen() {
   const showToast = useUiStore((state) => state.showToast);
   const palette = usePalette();
   const { t } = useI18n();
-  const pollingRef = useRef(true);
-  useEffect(() => { return () => { pollingRef.current = false; }; }, []);
   // 账号设置页固定竖屏：避免从横屏播放器进入时内容被横向挤压（布局按竖屏设计）
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
@@ -181,12 +185,12 @@ export default function LoginScreen() {
   const [area, setArea] = useState('86');
   const [code, setCode] = useState('');
   const [manualToken, setManualToken] = useState(settings.p48Token || '');
-  const [qrKey, setQrKey] = useState('');
-  const activePollKeyRef = useRef(''); // Y3: 当前活跃轮询的二维码 key（刷新二维码时旧轮询据此退出）
+  const [biliWvActive, setBiliWvActive] = useState(false); // B站整页登录 WebView 是否挂载（页面自带二维码）
+  const [biliWvNonce, setBiliWvNonce] = useState(0); // 每次点击 +1 强制重挂载 → 全新二维码（key 驱动）
+  const biliDoneRef = useRef(false); // 登录成功只处理一次（防 onNavigationStateChange 重复触发重复保存）
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [biliStatus, setBiliStatus] = useState('');
-  const [qrHtml, setQrHtml] = useState<string | null>(null);
   const [profileName, setProfileName] = useState('');
   const [profileAvatar, setProfileAvatar] = useState('');
   const [renameCountText, setRenameCountText] = useState('');
@@ -330,70 +334,44 @@ export default function LoginScreen() {
     }
   };
 
-  const pollBiliLogin = async (key: string) => {
-    // Y3: 抢占——刷新二维码会带新 key 启动新轮询；旧轮询被抢占即退出（此前靠从未赋值的 qrKey，永不退出）
-    if (activePollKeyRef.current && activePollKeyRef.current !== key) return;
-    activePollKeyRef.current = key;
-    let pollWarned = false;
-    for (let i = 0; i < 30; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      if (!pollingRef.current) return; // abort if unmounted
-      if (activePollKeyRef.current !== key) return; // 已被更新的二维码轮询抢占
-      try {
-        const res = await bilibiliApi.pollQrCode(key);
-        if (res.data.code === 0) {
-          const cookie = buildBilibiliCookieFromUrl(res.data?.url || '');
-          if (!cookie.includes('SESSDATA')) {
-            // 记录真实回调 url（截断），下次仍失败时 logcat 可定位是 B站侧缺参数还是解析问题
-            logWarn(
-              `[bili-login] 扫码已确认但 url 未解析出 SESSDATA（前 200 字符）: ${String(res.data?.url || '').slice(0, 200)} code=${res.data?.code}`,
-              'login.pollBili',
-            );
-            setBiliStatus(t('B站已确认但没有拿到Cookie'));
-            return;
-          }
-          const nav = await bilibiliApi.checkLoginStatus(cookie);
-          const userInfo = nav?.code === 0 && nav?.data?.isLogin
-            ? { mid: String(nav.data.mid || ''), uname: String(nav.data.uname || ''), face: String(nav.data.face || '') }
-            : null;
-          setSettings({ bilibiliCookie: cookie, bilibiliUserInfo: userInfo });
-          await saveSettings({ bilibiliCookie: cookie, bilibiliUserInfo: userInfo });
-          setBiliStatus(t('B站登录成功'));
-          return;
-        }
-        if (res.data.code === 86038) {
-          setBiliStatus(t('二维码已过期请刷新'));
-          return;
-        }
-      } catch (e) {
-        if (!pollWarned) {
-          pollWarned = true;
-          logWarn('B站二维码轮询失败: ' + errorMessage(e), 'login.pollBili');
-        }
-      }
-    }
-    setBiliStatus(t('B站登录超时'));
+  /** B站登录：挂载整页 passport 登录 WebView（桌面 UA）。页面自己生成二维码、轮询扫码状态，
+   *  确认后跳 crossDomain?SESSDATA=...，由 handleBiliWebViewNav 拦截保存。每次点击 +1 nonce 强制重挂载。 */
+  const handleBiliQr = () => {
+    biliDoneRef.current = false; // 新一轮登录重新允许捕获
+    setBiliStatus(t('请用B站App扫码登录'));
+    setBiliWvActive(true);
+    setBiliWvNonce((n) => n + 1);
   };
 
-  const handleBiliQr = async () => {
-    setLoading(true);
-    setBiliStatus(t('正在获取B站二维码'));
+  /** 整页 WebView 导航回调：抓到 crossDomain?SESSDATA=... 即解析保存并卸载 WebView */
+  const handleBiliWebViewNav = (state: any) => {
     try {
-      const res = await bilibiliApi.generateQrCode();
-      if (res.code === 0 && res.data) {
-        const key = res.data.qrcode_key;
-        const svg = await QRCode.toString(res.data.url, { type: 'svg', margin: 2, width: 220 });
-        setQrKey(key);
-        setQrHtml(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"/></head><body style="margin:0;background:#fff;display:flex;align-items:center;justify-content:center;">${svg}</body></html>`);
-        setBiliStatus(t('请用B站App扫码'));
-        pollBiliLogin(key);
-      } else {
-        setBiliStatus(res?.message || t('B站二维码获取失败'));
+      if (biliDoneRef.current) return; // 已成功过（可能又跳 www.bilibili.com 等），忽略
+      const url = String(state?.url || '');
+      if (!url || !url.includes('SESSDATA')) return;
+      const parsed = buildBilibiliCookieFromUrl(url);
+      if (!parsed.includes('SESSDATA')) {
+        logWarn(`[bili-login] WebView 跳 crossDomain 但未解析出 SESSDATA（前 200 字符）: ${url.slice(0, 200)}`, 'login.biliWebView');
+        return;
       }
-    } catch (error) {
-      setBiliStatus(errorMessage(error));
-    } finally {
-      setLoading(false);
+      // 成功：只处理一次 + 卸载 WebView（停掉页面后续轮询/跳转，避免越权域触发风控）
+      biliDoneRef.current = true;
+      setBiliWvActive(false);
+      setBiliStatus(t('B站登录成功'));
+      // 验签 + 保存
+      bilibiliApi.checkLoginStatus(parsed).then((nav) => {
+        const userInfo = nav?.code === 0 && nav?.data?.isLogin
+          ? { mid: String(nav.data.mid || ''), uname: String(nav.data.uname || ''), face: String(nav.data.face || '') }
+          : null;
+        setSettings({ bilibiliCookie: parsed, bilibiliUserInfo: userInfo });
+        saveSettings({ bilibiliCookie: parsed, bilibiliUserInfo: userInfo });
+      }).catch(() => {
+        // 验签失败也保存 raw cookie，避免反复登录
+        setSettings({ bilibiliCookie: parsed, bilibiliUserInfo: null });
+        saveSettings({ bilibiliCookie: parsed, bilibiliUserInfo: null });
+      });
+    } catch (e) {
+      logWarn('B站 WebView 登录回调异常: ' + errorMessage(e), 'login.biliWebView');
     }
   };
 
@@ -601,9 +579,25 @@ export default function LoginScreen() {
         {mode === 'bilibili' ? (
           <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.hairline, borderWidth: StyleSheet.hairlineWidth }]}>
             <Text style={[styles.cardTitle, { color: palette.label }]}>{t('B站登录')}</Text>
-            {qrHtml ? (
-              <View style={styles.qrCard}>
-                <WebView source={{ html: qrHtml }} style={styles.qr} originWhitelist={['*']} scrollEnabled={false} />
+            {biliWvActive ? (
+              <View style={styles.qrWvCard}>
+                <WebView
+                  key={`bili-login-${biliWvNonce}`}
+                  source={{ uri: BILI_PASSPORT_LOGIN_URL }}
+                  userAgent={BILI_DESKTOP_UA}
+                  onNavigationStateChange={handleBiliWebViewNav}
+                  javaScriptEnabled
+                  domStorageEnabled
+                  thirdPartyCookiesEnabled
+                  setSupportMultipleWindows={false}
+                  style={styles.qrWv}
+                  startInLoadingState
+                  renderLoading={() => (
+                    <View style={styles.qrWvLoading}>
+                      <ActivityIndicator color={palette.tint} />
+                    </View>
+                  )}
+                />
               </View>
             ) : (
               <View style={styles.qrPlaceholder}>
@@ -613,12 +607,11 @@ export default function LoginScreen() {
             {biliStatus ? <Text style={[styles.biliStatus, { color: palette.labelSecondary }]}>{biliStatus}</Text> : null}
             <View style={styles.btnCol}>
               <Button
-                title={qrHtml ? t('刷新B站二维码') : t('获取B站登录二维码')}
+                title={biliWvActive ? t('刷新B站二维码') : t('获取B站登录二维码')}
                 variant="filled"
                 size="md"
                 onPress={handleBiliQr}
                 disabled={loading}
-                loading={loading}
                 fullWidth
               />
             </View>
@@ -779,18 +772,18 @@ const styles = StyleSheet.create({
   phoneInput: { flex: 1 },
   avatarRow: { marginTop: 4 },
   biliStatus: { marginTop: 10, fontSize: 12, textAlign: 'center', lineHeight: 18, flexShrink: 0, marginBottom: 4 },
-  qrCard: {
+  // 整页 passport 登录 WebView：桌面页面需要比纯二维码更大的可视区，用卡内全宽
+  qrWvCard: {
     alignSelf: 'center',
-    width: 220,
-    height: 220,
+    width: '100%',
+    height: 340,
     borderRadius: 16,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 12,
   },
-  qr: { width: 220, height: 220 },
+  qrWv: { width: '100%', height: 340, backgroundColor: '#FFFFFF' },
+  qrWvLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' },
   qrPlaceholder: {
     alignSelf: 'center',
     width: 220,
