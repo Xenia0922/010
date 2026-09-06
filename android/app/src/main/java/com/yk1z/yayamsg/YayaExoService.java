@@ -51,6 +51,10 @@ import java.util.Map;
  */
 public class YayaExoService extends Service {
   public static final String ACTION_PLAY_QUEUE = "yaya.exo.play_queue";
+  /** 会话重声明：App 回前台/即将离开（Home键）时由 Activity 触发——重新 setActive + 重推状态 + 重建通知。
+   *  修复：从音乐页返回 App 首页后再切后台，ColorOS 偶发把媒体卡绑定到过期会话/旧状态，
+   *  表现为通知栏/锁屏控件"失灵"；每次前台恢复/离开前重声明一次，卡必绑到当前唯一活跃会话。 */
+  public static final String ACTION_REASSERT = "yaya.exo.reassert";
   private static final String CHANNEL_ID = "yaya_radio_v3";
   private static final int NOTIFICATION_ID = 2024;
   private static final Handler h = new Handler(Looper.getMainLooper());
@@ -273,6 +277,23 @@ public class YayaExoService extends Service {
         extra.put("message", "queue err " + t.getMessage());
         RadioExoModule.emitJs(getApplicationContext(), "error", extra);
       }
+    } else if (ACTION_REASSERT.equals(action)) {
+      // 会话重声明：App 每次回前台 / 用户按 Home 离开前触发（见 MainActivity）。
+      // ColorOS 在 App 内导航/页面堆栈变化后偶发把媒体卡绑到过期会话状态 → 控件失灵；
+      // 这里强制 setActive + 重推状态 + 重建 MediaStyle 通知，确保系统卡绑定当前会话。
+      if (exo == null) {
+        // 未在播：不建通知不留活口（避免凭空冒一个媒体卡）
+        try { stopSelf(); } catch (Throwable ignored) {}
+        return START_NOT_STICKY;
+      }
+      try { if (session != null) session.setActive(true); } catch (Throwable ignored) {}
+      pushState();
+      try {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
+      } catch (Throwable ignored) {}
+      Log.i("YayaExo", "[sysdbg] REASSERT pwR=" + (exo.getPlayWhenReady()) + " pos=" + exo.getCurrentPosition() + " sessionNull=" + (session == null));
+      return START_NOT_STICKY;
     } else {
       String cmd = intent.getStringExtra("cmd");
       if (exo == null) {

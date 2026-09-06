@@ -23,11 +23,17 @@ class MainActivity : ReactActivity() {
   override fun onPause() {
     super.onPause()
     android.util.Log.i("YayaExo", "[sysdbg] MainActivity onPause")
+    // 离开前台（按 Home/切应用/进通知栏）前重声明 Exo 会话：
+    // ColorOS 在「音乐页→App 首页→再切后台」路径上把媒体卡绑到过期会话状态 → 通知栏/锁屏控件失灵。
+    // 关键点：此路径在切后台前没有 onResume（导航回首页不触发 resume），
+    // 若只在 onResume 重声明，控件失灵的瞬间永远等不到修复 → 必须 onPause 也重声明一次。
+    reassertExoSession()
   }
 
   override fun onResume() {
     super.onResume()
     android.util.Log.i("YayaExo", "[sysdbg] MainActivity onResume")
+    reassertExoSession()
   }
 
   override fun onStop() {
@@ -43,6 +49,15 @@ class MainActivity : ReactActivity() {
   override fun onDestroy() {
     android.util.Log.i("YayaExo", "[sysdbg] MainActivity onDestroy")
     super.onDestroy()
+  }
+
+  /** 前台恢复即重声明 Exo 媒体会话（服务未在播时自灭，不留多余通知/卡片） */
+  private fun reassertExoSession() {
+    try {
+      val i = android.content.Intent(this, YayaExoService::class.java)
+          .setAction(YayaExoService.ACTION_REASSERT)
+      startService(i)
+    } catch (_: Throwable) { }
   }
 
   /**
