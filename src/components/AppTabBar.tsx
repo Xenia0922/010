@@ -67,9 +67,10 @@ function TabCell({
       onPress={onSelect}
       style={({ pressed }) => [
         styles.cell,
+        // iOS 26 选中态：中性玻璃灰底 + accent 文字图标（不再粉，克制）
         active && {
           backgroundColor:
-            palette.name === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(255,111,145,0.18)',
+            palette.name === 'dark' ? 'rgba(120,120,128,0.30)' : 'rgba(120,120,128,0.16)',
         },
         active && pressed && { transform: [{ scale: 0.96 }] },
         pressed && !active && { transform: [{ scale: 0.97 }] },
@@ -178,54 +179,56 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     alignItems: 'center',
-    paddingHorizontal: 12,
+    // 居中略加余量：上一版 paddingHorizontal 12 让胶囊贴边感觉偏左
+    paddingHorizontal: 16,
   },
   bar: {
     flexDirection: 'row',
-    borderRadius: 26,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    minHeight: 68,
-    // 玻璃圆角裁剪：BlurView/tint/高光铺满后被裁进胶囊
+    // 长度自适应内容而非撑满屏宽：定宽 cell → 胶囊收短居中(缩「长度」)
+    borderRadius: 28,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minHeight: 64,
     overflow: 'hidden',
-    // 不设边框/高 elevation：任何 hairline 描边或 Android elevation 阴影
-    // 都会在胶囊四周形成「一圈边框」观感（iOS 保留柔和投影）
+    // 连续柔和悬浮投影（iOS+Android 双端都圆角, 圆角32 跟随 outline）
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.10,
+        shadowRadius: 16,
       },
-      android: { elevation: 0 },
+      android: { elevation: 8 },
       default: null,
     }),
   },
-  // 玻璃顶部受光细线（在胶囊内顶部 1px）
+  // 玻璃顶部受光细线（在胶囊内顶部 1px, inset 跟随圆角）
   glassHighlight: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: 16,
+    right: 16,
     top: 0,
     height: 1,
     borderRadius: 1,
   },
-  // 玻璃底部暗边（1px 内阴影, 玻璃与下方内容的分界）
+  // 玻璃底部暗边（1px 内阴影, 玻璃与下方内容的分界, inset 跟随圆角）
   glassShadowEdge: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: 16,
+    right: 16,
     bottom: 0,
     height: 1,
     borderRadius: 1,
   },
   cell: {
-    flex: 1,
+    // 取消 flex:1 → 改固定宽, 胶囊随内容收短(用户反馈: 缩的是「长度」)
+    width: 76,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 6,
+    paddingVertical: 4,
     paddingHorizontal: 4,
-    borderRadius: 20,
+    // 完全 pill（半径=一半高）：选中时圆形指示感 iOS 26
+    borderRadius: 28,
   },
   cellIcon: { alignItems: 'center', justifyContent: 'center' },
 });

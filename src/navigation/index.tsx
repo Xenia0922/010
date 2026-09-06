@@ -183,8 +183,8 @@ function MainTabs() {
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: 'transparent' },
-        // tab 切换平移式（v7 内建 shift：新页滑入；比瞬切/fade 更苹果）
-        animation: 'shift',
+        // iPhone 26 底部 tab 切换无水平滑动（瞬切）；靠 TabCell spring pop 主导
+        animation: 'none',
       }}
     >
       <Tab.Screen name="Home" component={HomeTabScreen} options={{ tabBarLabel: '主页' }} />

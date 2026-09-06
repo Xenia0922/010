@@ -1849,7 +1849,7 @@ export default function FollowedRoomsScreen() {
   const openRoomRankPanel = useCallback(async () => {
     if (!roomPlayer?.liveId) {
       setRankRows([]);
-      setRankStatus(t('当前直播/回放缺少 liveId，不能获取贡献榜'));
+      setRankStatus(t('该直播来源暂不支持贡献榜（如快捷开播/分享卡）'));
       setRankVisible(true);
       return;
     }
@@ -2947,7 +2947,7 @@ const styles = StyleSheet.create({
   roomRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
@@ -2960,13 +2960,13 @@ const styles = StyleSheet.create({
   roomCover: {
     width: 56,
     height: 56,
-    borderRadius: 12,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
-  roomCoverImg: { width: 56, height: 56, borderRadius: 12 },
+  roomCoverImg: { width: 56, height: 56, borderRadius: radii.md },
   roomCoverText: { fontSize: 22, fontWeight: '800' },
   roomInfo: { flex: 1, minWidth: 0, marginLeft: 12 },
   roomNameRow: { flexDirection: 'row', alignItems: 'center' },
