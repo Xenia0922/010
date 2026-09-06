@@ -18,6 +18,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.core.app.ServiceCompat;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -68,6 +69,9 @@ public class YayaExoService extends Service {
   private boolean pollRunning = false;
   private int currentRepeat = Player.REPEAT_MODE_OFF;
   private long lastNotifyMs = 0;
+  // progress 事件变更检测（暂停态稳态不发，省每 3s 空唤醒 JS）
+  private long lastEmitPosMs = Long.MIN_VALUE;
+  private boolean lastEmitPlaying = false;
   // 元数据（来自 playQueue JSON）
   private String title = "";
   private String lastTrackUrl = ""; // 当前已下发曲目 url（progress 事件带出，供 JS 去竞态）
@@ -93,7 +97,7 @@ public class YayaExoService extends Service {
       emitProgress();
       pushState(); // framework 会话（真实位置）；元数据内部已按需缓存（仅切曲才重发）
       // ColorOS workaround：播放中每 3s 重建 MediaStyle 完整通知助推卡刷新（疑仅重绘最近一次完整通知）。
-      // 暂停/结束态不重建（内容静止，3s 拉长到 3s 一次轻量会话保活即可），省通知构建 + 包管理器 IPC。
+      // 暂停/结束态不重建（内容静止，3s 一次轻量会话保活即可），省通知构建 + 包管理器 IPC。
       if (playing) {
         long now = System.currentTimeMillis();
         if (now - lastNotifyMs >= 3000) {
@@ -123,8 +127,29 @@ public class YayaExoService extends Service {
       Map<String, Object> extra = new HashMap<>();
       extra.put("message", String.valueOf(error.getMessage()));
       RadioExoModule.emitJs(getApplicationContext(), "error", extra);
+      // 播放器致命错误 → 立即收尾：JS error 分支会禁用原生路径转 RNV 兜底，
+      // 若不自杀，本服务会一直前台 + 轮询，与兜底路径双会话/双通知（ColorOS"像在打架"）。
+      stopServiceCleanly();
     }
   };
+
+  /** 收尾停服务：撤前台通知 + 停轮询 + 自杀（onPlayerError / stop 命令 / 空 exo 分支共用）。
+   *  避免残留：前台通知幽灵卡 / 双前台服务并存 / 播放器对象空挂。 */
+  private void stopServiceCleanly() {
+    stopPolling();
+    try {
+      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
+    } catch (Throwable ignored) {}
+    try { stopSelf(); } catch (Throwable ignored) {}
+  }
+
+  /** 释放当前封面 Bitmap 并置空（换曲/换封面/重建播放器前调用，缓解持续切歌的 Bitmap 堆积累积） */
+  private void recycleArt() {
+    if (artBitmap != null && !artBitmap.isRecycled()) {
+      try { artBitmap.recycle(); } catch (Throwable ignored) {}
+    }
+    artBitmap = null;
+  }
 
   private static Map<String, Object> mapOf(String k, String v) {
     Map<String, Object> m = new HashMap<>();
@@ -182,7 +207,7 @@ public class YayaExoService extends Service {
             new Intent(this, MediaButtonProxyReceiver.class).setAction(Intent.ACTION_MEDIA_BUTTON),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
     session.setCallback(new MediaSession.Callback() {
-      @Override public void onPlay() { Log.i("YayaExo", "CMD onPlay"); if (exo != null) exo.play(); }
+      @Override public void onPlay() { Log.i("YayaExo", "CMD onPlay"); if (exo != null) { exo.play(); startPolling(); } }
       @Override public void onPause() { Log.i("YayaExo", "CMD onPause curPos=" + (exo == null ? -1 : exo.getCurrentPosition())); if (exo != null) exo.pause(); }
       @Override public void onSkipToNext() { Log.i("YayaExo", "CMD onSkipToNext"); localSkip(true); }
       @Override public void onSkipToPrevious() { Log.i("YayaExo", "CMD onSkipToPrevious"); localSkip(false); }
@@ -190,9 +215,11 @@ public class YayaExoService extends Service {
       @Override public void onStop() { Log.i("YayaExo", "CMD onStop"); if (exo != null) exo.pause(); }
     });
     session.setActive(true);
-    artBitmap = null;
+    recycleArt();
     artPath = "";
     lastNotifyMs = 0;
+    lastEmitPosMs = Long.MIN_VALUE;
+    lastEmitPlaying = false;
     pushState();
   }
 
@@ -242,7 +269,7 @@ public class YayaExoService extends Service {
           String art = o.optString("art");
           if (!art.equals(artPath)) {
             artPath = art;
-            artBitmap = null;
+            recycleArt();
             if (art.startsWith("file://")) {
               try { artBitmap = BitmapFactory.decodeFile(art.substring("file://".length())); } catch (Throwable ignored) {}
             }
@@ -288,7 +315,7 @@ public class YayaExoService extends Service {
       // 这里强制 setActive + 重推状态 + 重建 MediaStyle 通知，确保系统卡绑定当前会话。
       if (exo == null) {
         // 未在播：不建通知不留活口（避免凭空冒一个媒体卡）
-        try { stopSelf(); } catch (Throwable ignored) {}
+        stopServiceCleanly();
         return START_NOT_STICKY;
       }
       try { if (session != null) session.setActive(true); } catch (Throwable ignored) {}
@@ -303,7 +330,7 @@ public class YayaExoService extends Service {
       applySkipHints(intent.getStringExtra("next"), intent.getStringExtra("prev"));
       if (exo == null) {
         // 未在播还收到 hint（停播竞态残留）→ 立即停，避免 startForegroundService 5s 契约崩溃
-        try { stopSelf(); } catch (Throwable ignored) {}
+        stopServiceCleanly();
       }
       return START_NOT_STICKY;
     } else {
@@ -315,11 +342,11 @@ public class YayaExoService extends Service {
         return START_NOT_STICKY;
       }
       if ("pause".equals(cmd)) { exo.pause(); pushState(); }
-      else if ("resume".equals(cmd)) { exo.play(); pushState(); }
+      else if ("resume".equals(cmd)) { exo.play(); pushState(); startPolling(); }
       else if ("next".equals(cmd)) { localSkip(true); }
       else if ("prev".equals(cmd)) { localSkip(false); }
       else if ("play_pause".equals(cmd)) {
-        if (isPlaying()) { exo.pause(); } else { exo.play(); }
+        if (isPlaying()) { exo.pause(); } else { exo.play(); startPolling(); }
         pushState();
       } else if ("seek".equals(cmd)) {
         exo.seekTo(Math.max(0, (long) (intent.getDoubleExtra("position", 0) * 1000)));
@@ -328,9 +355,8 @@ public class YayaExoService extends Service {
         currentRepeat = rep;
         exo.setRepeatMode(rep == 1 ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
       } else if ("stop".equals(cmd)) {
-        stopPolling();
         if (exo != null) { exo.stop(); exo.clearMediaItems(); }
-        try { stopSelf(); } catch (Throwable ignored) {}
+        stopServiceCleanly();
       }
     }
     return START_NOT_STICKY;
@@ -423,7 +449,7 @@ public class YayaExoService extends Service {
         exo.prepare();
         // 换曲后套用 hint 封面（file:// 已落盘）；无/不可用 → 清旧封面防错配
         artPath = nArt;
-        artBitmap = null;
+        recycleArt();
         if (nArt.startsWith("file://")) {
           try { artBitmap = BitmapFactory.decodeFile(nArt.substring("file://".length())); } catch (Throwable ignored) {}
         }
@@ -485,13 +511,20 @@ public class YayaExoService extends Service {
   }
 
   /** JS 进度回流（App 内进度条/播放态）；带当前曲 url 供 JS 丢弃切歌竞态的旧曲心跳 */
+  /** JS 进度回流（App 内进度条/播放态）；带当前曲 url 供 JS 丢弃切歌竞态的旧曲心跳。
+   *  变更检测：仅 position 或 playing 状态变化才 emit —— 暂停态稳态不再每 3s 空唤醒 JS（功耗）。 */
   private void emitProgress() {
     if (exo == null) return;
     try {
+      long posMs = exo.getCurrentPosition();
+      boolean playing = exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED;
+      if (posMs == lastEmitPosMs && playing == lastEmitPlaying) return;
+      lastEmitPosMs = posMs;
+      lastEmitPlaying = playing;
       Map<String, Object> extra = new HashMap<>();
-      extra.put("position", exo.getCurrentPosition() / 1000.0);
+      extra.put("position", posMs / 1000.0);
       extra.put("duration", exo.getDuration() > 0 ? exo.getDuration() / 1000.0 : 0);
-      extra.put("playing", exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED);
+      extra.put("playing", playing);
       extra.put("index", exo.getCurrentMediaItemIndex());
       extra.put("url", lastTrackUrl);
       RadioExoModule.emitJs(getApplicationContext(), "progress", extra);
@@ -579,7 +612,12 @@ public class YayaExoService extends Service {
   @Override
   public void onDestroy() {
     stopPolling();
+    try {
+      // 防御：撤前台通知（部分 ColorOS ROM 不随 onDestroy 自动撤，残留幽灵媒体卡）
+      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
+    } catch (Throwable ignored) {}
     destroySession();
+    recycleArt();
     if (exo != null) { try { exo.release(); } catch (Throwable ignored) {} exo = null; }
     super.onDestroy();
   }

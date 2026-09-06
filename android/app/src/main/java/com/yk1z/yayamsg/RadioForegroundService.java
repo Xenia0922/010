@@ -104,8 +104,10 @@ public class RadioForegroundService extends Service {
           | (duration > 0 ? PlaybackState.ACTION_SEEK_TO : 0);
       PlaybackState state = new PlaybackState.Builder()
           .setActions(actions)
+          // ⚠️ 必须用 elapsedRealtime（单调时钟）：SystemUI 用 (now-updated)×speed+position 演算进度，
+          // 用墙钟 currentTimeMillis 会让 ColorOS 算出异常差值 → 播放态进度错乱/归 0
           .setState(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-              position, 1.0f, System.currentTimeMillis())
+              position, 1.0f, android.os.SystemClock.elapsedRealtime())
           .build();
       mediaSession.setPlaybackState(state);
       mediaSession.setActive(true);
@@ -212,10 +214,16 @@ public class RadioForegroundService extends Service {
         + " title=" + title + " art=" + (coverBitmap != null ? "Y" : "N"));
     startForeground(NOTIFICATION_ID, buildNotification());
     }
-    if (wakeLock != null && !wakeLock.isHeld()) {
+    // ⚠️ 唤醒锁只在真正播放时持有：暂停态（isPlaying=false）立即释放，
+    // 否则「暂停的音乐/电台」一直持 PARTIAL_WAKE_LOCK → 后台持续耗电（曾泄漏到 onDestroy 才放）。
+    if (wakeLock != null) {
       try {
-        wakeLock.acquire();
-      } catch (SecurityException ignored) {
+        if (isPlaying) {
+          if (!wakeLock.isHeld()) wakeLock.acquire();
+        } else {
+          if (wakeLock.isHeld()) wakeLock.release();
+        }
+      } catch (SecurityException | RuntimeException ignored) {
       }
     }
     return START_NOT_STICKY;
