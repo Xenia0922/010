@@ -9,14 +9,17 @@ export const accent = {
   pinkOnDark: '#ff8fa8',
 } as const;
 
-/** 官方口袋48风格：白底 + 粉点缀 + 实心卡片（2026-08-15 改版） */
+/** 官方口袋48风格：白底 + 粉点缀 + 实心卡片（2026-08-15 改版）
+ *  2026-09-06 用户嫌「功能选项底色太白了」+「tab 玻璃感不足」
+ *  bg #F5F5F7→#ECEDF1、surface 全白 #FFFFFF→#F4F5F9（柔和卡片，非惨白）、
+ *  muted/glass 系列同调:卡片白块与背景灰层次舒适,iOS 26 group 卡片观感 */
 const neutralLight = {
-  background: '#F5F5F7',
-  surface: '#FFFFFF',
-  surfaceElevated: '#FFFFFF',
-  surfaceMuted: '#F0F0F3',
-  surfaceGlass: '#FFFFFF',
-  surfaceGlassStrong: '#FFFFFF',
+  background: '#ECEDF1',
+  surface: '#F4F5F9',
+  surfaceElevated: '#F4F5F9',
+  surfaceMuted: '#ECEDF1',
+  surfaceGlass: '#F4F5F9',
+  surfaceGlassStrong: '#F4F5F9',
   hairline: 'rgba(0,0,0,0.06)',
   separator: 'rgba(60,60,67,0.14)',
   label: '#111114',

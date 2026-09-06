@@ -102,44 +102,56 @@ export function AppTabBar({ items, activeKey, onSelect }: AppTabBarProps) {
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.outer, { paddingBottom: 10 }]}
+      style={[styles.outer, { paddingBottom: 16 }]}
     >
       <View
         style={[
           styles.bar,
           {
-            // 灰调实底（非纯白）：浅色 #F2F3F7 系, 更实不透虚；深色暖灰
-            backgroundColor: isDark ? 'rgba(26,27,32,0.74)' : 'rgba(242,243,247,0.80)',
+            // 玻璃底色（更实不透）：液态玻璃感但不高透；保留 12% 让 blur 仍显磨砂
+            backgroundColor: isDark ? 'rgba(30,31,36,0.86)' : 'rgba(245,246,250,0.88)',
             borderColor: palette.innerStroke,
           },
         ]}
       >
-        {/* 磨砂层：Android 12+ 真模糊（下方内容/背景图）；iOS 系统毛玻璃 */}
+        {/* 磨砂层：Android 12+ 真模糊；iOS 系统毛玻璃 */}
         <BlurView
           style={StyleSheet.absoluteFill}
           tint={isDark ? 'dark' : 'light'}
-          intensity={isDark ? 58 : 72}
+          intensity={isDark ? 62 : 82}
         />
-        {/* tint 色相层：轻叠主题色相即可(底已是灰调), 保证文字可读且不泛白 */}
+        {/* tint 色相层：保证可读；浅色几乎透, 深色轻提亮 */}
         <View
           style={[
             StyleSheet.absoluteFill,
             {
               backgroundColor: isDark
-                ? 'rgba(255,255,255,0.05)'
+                ? 'rgba(255,255,255,0.06)'
                 : 'rgba(255,255,255,0.12)',
             },
           ]}
         />
-        {/* 顶部细高光：1px 白亮线，玻璃边缘「受光」的观感关键（iOS Liquid Glass） */}
+        {/* 顶部细高光：玻璃受光边沿（iOS Liquid Glass） */}
         <View
           pointerEvents="none"
           style={[
             styles.glassHighlight,
             {
               backgroundColor: isDark
-                ? 'rgba(255,255,255,0.16)'
-                : 'rgba(255,255,255,0.65)',
+                ? 'rgba(255,255,255,0.20)'
+                : 'rgba(255,255,255,0.85)',
+            },
+          ]}
+        />
+        {/* 底部细暗边：玻璃下方投影边缘，液态质感 */}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.glassShadowEdge,
+            {
+              backgroundColor: isDark
+                ? 'rgba(0,0,0,0.32)'
+                : 'rgba(0,0,0,0.10)',
             },
           ]}
         />
@@ -166,14 +178,14 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
   },
   bar: {
     flexDirection: 'row',
-    borderRadius: 24,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    minHeight: 62,
+    borderRadius: 26,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    minHeight: 68,
     // 玻璃圆角裁剪：BlurView/tint/高光铺满后被裁进胶囊
     overflow: 'hidden',
     // 不设边框/高 elevation：任何 hairline 描边或 Android elevation 阴影
@@ -195,6 +207,15 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     top: 0,
+    height: 1,
+    borderRadius: 1,
+  },
+  // 玻璃底部暗边（1px 内阴影, 玻璃与下方内容的分界）
+  glassShadowEdge: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 0,
     height: 1,
     borderRadius: 1,
   },
