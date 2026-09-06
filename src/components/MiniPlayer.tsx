@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   AppState,
+  DeviceEventEmitter,
   PanResponder,
   StyleSheet,
   Text,
@@ -23,6 +24,7 @@ import Video from 'react-native-video';
 import { WebView } from 'react-native-webview';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
+import { useSettingsStore } from '../store';
 import { usePalette } from '../theme';
 import { setPipPlaying, setPipAspect } from '../utils/pip';
 import { useI18n } from '../i18n';
@@ -50,6 +52,7 @@ export function MiniPlayer() {
   const playing = useMiniPlayerStore((s) => s.playing);
   const setPlaying = useMiniPlayerStore((s) => s.setPlaying);
   const close = useMiniPlayerStore((s) => s.close);
+  const pipAuto = useSettingsStore((s) => !!s.settings?.pip_auto);
   const videoRef = useRef<any>(null);
   const seekedRef = useRef(false);
   // 小窗高度（按视频内容比例自适应）
@@ -137,20 +140,28 @@ export function MiniPlayer() {
     [info, winW, winH, navigation, showControls, boxW],
   );
 
+  // 是否已渲染为"后台 PiP 盖层"（全屏纯媒体，盖住页面其它 UI，保证系统悬浮窗画面干净）
+  const [pipCover, setPipCover] = useState(false);
   // 播放状态 → PiP 标志（小窗切后台自动进系统悬浮窗）
   useEffect(() => {
     setPipPlaying(visible && playing && !!info?.url);
   }, [visible, playing, info]);
 
   // 切后台兜底：强制置 PiP 标志（防主播放器关闭时把标志覆盖成 false，导致小窗切后台不进悬浮窗）
+  // + 同步渲染"全屏媒体盖层"：系统 PiP 的画面 = 整个 Activity 窗口快照，若不把页面盖住，
+  //   悬浮窗里会看到「列表页 + 右下角小窗」的脏画面；全屏化后悬浮窗=纯媒体。
+  // ⚠️ AppState 在 PiP 下不切 background（仍为 active），不能驱动此处的盖层；
+  //    改用 MainActivity.onPictureInPictureModeChanged → DeviceEvent 'PipEnteredChanged' 通知。
   useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s !== 'active') {
-        setPipPlaying(visible && playing && !!info?.url);
-      }
+    const active = visible && playing && !!info?.url;
+    const sub = DeviceEventEmitter.addListener('PipEnteredChanged', (entered: boolean) => {
+      setPipPlaying(entered && active);
+      // 仅 pip_auto 开启（会真正进系统 PiP）时才全屏盖层
+      setPipCover(entered && active && pipAuto);
     });
     return () => sub.remove();
-  }, [visible, playing, info]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, playing, info, pipAuto]);
 
   // 系统 PiP ⏯ 点击（PipToggleBridge 经 store 发信号）→ 与小窗暂停键同逻辑切换当前小窗内容
   const sysToggleSeq = useMiniPlayerStore((s) => s.sysToggleSeq);
@@ -210,11 +221,12 @@ export function MiniPlayer() {
       <Animated.View
         style={[
           styles.wrap,
+          pipCover && styles.wrapPiPFull,
           {
-            left: pos.x,
-            top: pos.y,
-            width: boxW,
-            height: boxHNow,
+            left: pipCover ? 0 : (pos.x as any),
+            top: pipCover ? 0 : (pos.y as any),
+            width: pipCover ? winW : boxW,
+            height: pipCover ? winH : boxHNow,
             backgroundColor: '#000',
             borderColor: palette.hairline,
           },
@@ -331,8 +343,8 @@ export function MiniPlayer() {
           {...pan.panHandlers}
           style={styles.dragLayer}
         />
-        {/* 底部标题（随控件显隐） */}
-        {controlsVisible ? (
+        {/* 底部标题（随控件显隐；PiP 盖层时隐藏，保证悬浮窗纯画面） */}
+        {controlsVisible && !pipCover ? (
           <View style={styles.titleBar} pointerEvents="none">
             <Text style={styles.title} numberOfLines={1}>{info.title}</Text>
           </View>
@@ -341,10 +353,15 @@ export function MiniPlayer() {
 
       {/* 按钮层：返回全屏/关闭/缩小/暂停 全部随控件显隐（3s 自动隐藏，点画面唤出） */}
       <Animated.View
-        pointerEvents="box-none"
-        style={[StyleSheet.absoluteFill, { left: pos.x, top: pos.y, width: boxW, height: boxHNow, zIndex: 1002, elevation: 24 }]}
+        pointerEvents={pipCover ? 'none' : 'box-none'}
+        style={[
+          StyleSheet.absoluteFill,
+          pipCover
+            ? { left: 0, top: 0, width: winW, height: winH, zIndex: 9999, elevation: 9999 }
+            : { left: pos.x, top: pos.y, width: boxW, height: boxHNow, zIndex: 1002, elevation: 24 },
+        ]}
       >
-        {controlsVisible ? (
+        {controlsVisible && !pipCover ? (
           <>
             {/* 返回全屏（右上角） */}
             <TouchableOpacity
@@ -397,6 +414,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
     zIndex: 999,
+  },
+  // PiP 盖层：铺满整窗盖住页面其它 UI（系统 PiP 画面=整窗快照，需保证悬浮窗里只有媒体）
+  wrapPiPFull: {
+    borderRadius: 0,
+    borderWidth: 0,
+    elevation: 9999,
+    zIndex: 9999,
   },
   // 透明拖动层：高 elevation 使其盖过 Android WebView/Video 的硬件渲染层（它们可能无视
   // zIndex 按 elevation 排 Z 序），触摸才能稳定到 PanResponder（网页小窗拖动/点画面唤控件修复）

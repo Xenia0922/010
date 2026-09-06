@@ -89,6 +89,9 @@ class MainActivity : ReactActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
         && !isInPictureInPictureMode) {
       try {
+        // ⚠️ 在 enterPictureInPictureMode 之前通知 RN，让 JS 提前把"应用内小窗"盖层
+        // 全屏化（系统 PiP 内容 = 整窗快照，若不盖页面，悬浮窗里看到的是"列表+小窗"脏画面）
+        PipModule.emitPipChanged(true)
         enterPictureInPictureMode(PipModule.buildPipParams())
       } catch (_: Exception) {
         // 部分 ROM 限制，静默
@@ -109,6 +112,13 @@ class MainActivity : ReactActivity() {
           .putExtra("cmd", "stop")
       )
     } catch (_: Throwable) { }
+  }
+
+  /** PiP 模式切换：通知 RN（用于"应用内小窗 → 系统 PiP"盖层切换）
+   *  AppState 'background' 在 PiP 下不会触发，必须靠 native → JS 事件才能在 PiP 进入瞬间同步。 */
+  override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+    super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+    PipModule.emitPipChanged(isInPictureInPictureMode)
   }
 
   /**

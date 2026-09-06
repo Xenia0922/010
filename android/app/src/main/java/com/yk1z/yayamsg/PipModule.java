@@ -187,4 +187,20 @@ public class PipModule extends ReactContextBaseJavaModule {
       }
     });
   }
+
+  /** RN 事件名：系统 PiP 进入/退出（MainActivity.onPictureInPictureModeChanged 调用） */
+  public static final String EVENT_PIP_CHANGED = "PipEnteredChanged";
+
+  /** Activity PiP 状态变化（MainActivity.onPictureInPictureModeChanged）→ 发 RN 事件。
+   *  AppState 'background' 不会触发（PiP 下 RN AppState 仍为 active），不能用它驱动盖层。 */
+  public static void emitPipChanged(boolean entered) {
+    if (savedReactContext == null) return;
+    main.post(() -> {
+      try {
+        savedReactContext
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+            .emit(EVENT_PIP_CHANGED, entered);
+      } catch (Throwable ignored) {}
+    });
+  }
 }
