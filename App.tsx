@@ -292,10 +292,8 @@ function MusicForegroundBridge() {
   useEffect(() => {
     if (isNativeExoDisabled()) return; // RNV 降级：声音/会话由页面 Video + 旧自管服务负责
     if (playbackStateG === 'paused' && lastNativePlayingRef.current) {
-      console.warn(`[sysdbg] mirror→pause native (lastNative=${lastNativePlayingRef.current})`);
       exoControl('pause');
     } else if (playbackStateG === 'playing' && !lastNativePlayingRef.current) {
-      console.warn(`[sysdbg] mirror→resume native (lastNative=${lastNativePlayingRef.current})`);
       exoControl('resume');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,7 +332,6 @@ function MusicForegroundBridge() {
       } else if (type === 'ended') {
         clearSyncPause();
         clearSyncResume();
-        console.warn('[sysdbg] NATIVE ended');
         if (useMusicPlayerStore.getState().playbackState === 'playing') {
           // 播完自动切歌：watch effect 会在 url 就绪后补发原生
           MusicEngine.next().catch(() => {});
@@ -343,7 +340,6 @@ function MusicForegroundBridge() {
         // 原生已本地切歌（系统卡/媒体键在后台点按，JS 被冻结时事件排队、恢复后按序到达）：
         // 按 hint 携带的 index 把 store 对账到目标曲，防止 UI/状态停留旧曲。
         const urlN = String(p?.url || '');
-        console.warn(`[sysdbg] NATIVE skipped cmd=${String(p?.cmd || '')} url=${urlN.slice(0, 50)}`);
         clearSyncPause();
         clearSyncResume();
         if (!urlN) return;
@@ -370,11 +366,9 @@ function MusicForegroundBridge() {
         MusicEngine._prewarmNextTrack();
       } else if (type === 'cmd') {
         const c = String(p?.cmd || '');
-        console.warn(`[sysdbg] NATIVE cmd=${c} storeState=${useMusicPlayerStore.getState().playbackState}`);
         if (c === 'next') MusicEngine.next().catch(() => {});
         else if (c === 'prev') MusicEngine.prev().catch(() => {});
       } else if (type === 'error') {
-        console.warn(`[sysdbg] NATIVE error msg=${String((p as any)?.message || '').slice(0, 120)}`);
         clearSyncPause();
         clearSyncResume();
         setNativeExoDisabled(true); // 本会话原生判不可用（RNV 降级路径接管）
@@ -390,7 +384,6 @@ function MusicForegroundBridge() {
   // A: 切后台/失活立即落盘音乐播放记忆（30s 节流窗口内的切歌/进度不丢）
   useEffect(() => {
     const sub = AppState.addEventListener('change', (st) => {
-      console.warn(`[sysdbg] AppState→${st} music=${useMusicPlayerStore.getState().playbackState} nativeDisabled=${isNativeExoDisabled()} nativeActive=${isNativeExoActive()} lastNativePlaying=${lastNativePlayingRef.current}`);
       if (st !== 'active') flushMusicPlayerStorage();
     });
     return () => sub.remove();

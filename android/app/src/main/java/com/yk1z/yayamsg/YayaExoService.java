@@ -75,6 +75,11 @@ public class YayaExoService extends Service {
   private String album = "";
   private String artPath = "";
   private Bitmap artBitmap;
+  // 元数据指纹：title|artist|album|artPath|duration 任一变化才重发 session metadata（含整图 bitmap，
+  // 每 500ms tick 都重发 = 每半秒一次全图 Binder 拷贝，功耗大头）
+  private String lastMetaSig = "";
+  // 通知点击跳转 PI：构建昂贵（getLaunchIntentForPackage + PendingIntent），懒建一次复用
+  private PendingIntent cachedContentPi;
   // skip hints（单跳）：服务端本地切歌用，结构 = {url,title,artist,album,art?,index?}
   // index = 引擎语义下的队列下标（供 JS 恢复对账定位曲目）；-1 = 未知
   // art = 封面 file://（JS 已落盘）；后台本地切歌直接展示，不等回前台 JS 补推
@@ -84,23 +89,22 @@ public class YayaExoService extends Service {
 
   private final Runnable progressPoller = new Runnable() {
     @Override public void run() {
+      boolean playing = isPlaying();
       emitProgress();
-      pushState(); // framework 会话（真实位置）
-      // ColorOS workaround：周期重建 MediaStyle 完整通知（疑仅重绘最近一次完整通知）；3s 一次减闪烁
-      long now = System.currentTimeMillis();
-      if (now - lastNotifyMs >= 3000) {
-        lastNotifyMs = now;
-        Log.i("YayaExo", "[sysdbg] poller3s pwR=" + (exo != null && exo.getPlayWhenReady())
-            + " state=" + (exo == null ? -1 : exo.getPlaybackState())
-            + " pos=" + (exo == null ? -1 : exo.getCurrentPosition())
-            + " sessionNull=" + (session == null)
-            + " url=" + lastTrackUrl);
-        try {
-          NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-          if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
-        } catch (Throwable ignored) {}
+      pushState(); // framework 会话（真实位置）；元数据内部已按需缓存（仅切曲才重发）
+      // ColorOS workaround：播放中每 3s 重建 MediaStyle 完整通知助推卡刷新（疑仅重绘最近一次完整通知）。
+      // 暂停/结束态不重建（内容静止，3s 拉长到 3s 一次轻量会话保活即可），省通知构建 + 包管理器 IPC。
+      if (playing) {
+        long now = System.currentTimeMillis();
+        if (now - lastNotifyMs >= 3000) {
+          lastNotifyMs = now;
+          try {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
+          } catch (Throwable ignored) {}
+        }
       }
-      h.postDelayed(this, 500);
+      h.postDelayed(this, playing ? 500 : 3000);
     }
   };
 
@@ -204,14 +208,6 @@ public class YayaExoService extends Service {
   public int onStartCommand(Intent intent, int flags, int startId) {
     if (intent == null) return START_NOT_STICKY;
     String action = intent.getAction();
-    Log.i("YayaExo", "[sysdbg] onStartCommand action=" + String.valueOf(action)
-        + " cmd=" + String.valueOf(intent.getStringExtra("cmd"))
-        + " playing=" + intent.getBooleanExtra("playing", false)
-        + " exoNull=" + (exo == null)
-        + " pwR=" + (exo == null ? -1 : (exo.getPlayWhenReady() ? 1 : 0))
-        + " state=" + (exo == null ? -1 : exo.getPlaybackState())
-        + " pos=" + (exo == null ? -1 : exo.getCurrentPosition())
-        + " sessionNull=" + (session == null));
     if (ACTION_PLAY_QUEUE.equals(action)) {
       try {
         // ⚠️ startForegroundService 5s 契约：解析 JSON/建会话可能耗时，先占位进前台（防 RemoteServiceException）
@@ -301,7 +297,6 @@ public class YayaExoService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) nm.notify(NOTIFICATION_ID, buildNotification());
       } catch (Throwable ignored) {}
-      Log.i("YayaExo", "[sysdbg] REASSERT pwR=" + (exo.getPlayWhenReady()) + " pos=" + exo.getCurrentPosition() + " sessionNull=" + (session == null));
       return START_NOT_STICKY;
     } else if (ACTION_SET_HINTS.equals(action)) {
       // JS 播放确立/状态变化时推送的 skip hint：更新槽位（不建播放器不播）
@@ -371,10 +366,6 @@ public class YayaExoService extends Service {
         clearPrevHint();
       }
     } catch (Throwable t) { clearPrevHint(); }
-    Log.i("YayaExo", "[sysdbg] SKIP-HINTS next=" + (nextUrl.isEmpty() ? "-" : nextUrl)
-        + " prev=" + (prevUrl.isEmpty() ? "-" : prevUrl)
-        + " nextArt=" + (nextArt.isEmpty() ? "-" : nextArt)
-        + " prevArt=" + (prevArt.isEmpty() ? "-" : prevArt));
   }
 
   private void setNextHint(String u, String t, String a, String al, String art, int idx) {
@@ -421,8 +412,6 @@ public class YayaExoService extends Service {
     // （无下一跳元数据，避免二次点击重放同曲；前台 JS 会即刻按新 index 重新推送）
     if (isNext) { setPrevHint(lastTrackUrl, title, artist, album, artPath, -1); clearNextHint(); }
     else { setNextHint(lastTrackUrl, title, artist, album, artPath, -1); clearPrevHint(); }
-    Log.i("YayaExo", "[sysdbg] LOCAL-SKIP " + (isNext ? "NEXT" : "PREV") + " url=" + u
-        + " index=" + nIndex + " from=" + lastTrackUrl + " art=" + (nArt.isEmpty() ? "-" : nArt));
     title = nTitle; artist = nArtist; album = nAlbum; lastTrackUrl = u;
     String curU = currentMediaUrl();
     boolean same = curU != null && curU.equals(u);
@@ -509,7 +498,7 @@ public class YayaExoService extends Service {
     } catch (Throwable ignored) {}
   }
 
-  /** framework 会话状态推送（真实播放器数据） */
+  /** framework 会话状态推送（真实播放器数据）；元数据仅变化时重发（见 lastMetaSig） */
   private void pushState() {
     if (session == null || exo == null) return;
     try {
@@ -528,14 +517,16 @@ public class YayaExoService extends Service {
           .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
               exo.getCurrentPosition(), playing ? 1.0f : 0f, android.os.SystemClock.elapsedRealtime())
           .build();
-      Log.i("YayaExo", "[sysdbg] pushState actions=" + actions + " state=" + (playing ? "PLAY" : "PAUSE")
-          + " pos=" + exo.getCurrentPosition());
       session.setPlaybackState(ps);
+      // 元数据仅在切曲/封面变化时重发（含 artBitmap 的 binder 拷贝；duration 就绪也算变化）
+      long dur = exo.getDuration();
+      String sig = title + "|" + artist + "|" + album + "|" + artPath + "|" + (dur > 0 ? dur : 0);
+      if (sig.equals(lastMetaSig)) return;
+      lastMetaSig = sig;
       MediaMetadata.Builder b = new MediaMetadata.Builder();
       b.putString(MediaMetadata.METADATA_KEY_TITLE, title.isEmpty() ? "牙牙消息" : title);
       b.putString(MediaMetadata.METADATA_KEY_ARTIST, artist);
       b.putString(MediaMetadata.METADATA_KEY_ALBUM, album);
-      long dur = exo.getDuration();
       if (dur > 0) b.putLong(MediaMetadata.METADATA_KEY_DURATION, dur);
       if (artBitmap != null) b.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBitmap);
       session.setMetadata(b.build());
@@ -544,20 +535,15 @@ public class YayaExoService extends Service {
 
   private Notification buildNotification() {
     try {
-      NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-      if (nm != null) {
-        NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID, "后台播放", NotificationManager.IMPORTANCE_DEFAULT);
-        channel.setSound(null, null);
-        channel.enableVibration(false);
-        nm.createNotificationChannel(channel);
-      }
       String sub = artist.isEmpty() ? "牙牙消息" : artist + (album.isEmpty() ? "" : " · " + album);
-      Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
-      PendingIntent contentPi = open == null ? null
-          : PendingIntent.getActivity(this, 0, open,
+      if (cachedContentPi == null) {
+        // 懒建一次（getLaunchIntentForPackage 是包管理器 IPC，每 3s 一次太贵）
+        Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
+        if (open != null) {
+          cachedContentPi = PendingIntent.getActivity(this, 0, open,
               PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-      boolean playing = isPlaying();
+        }
+      }
       Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID);
       if (artBitmap != null) builder.setLargeIcon(artBitmap);
       // 极简系统媒体通知：控制按钮只放系统媒体卡（QS/锁屏由 session 提供），
@@ -569,7 +555,7 @@ public class YayaExoService extends Service {
           .setVisibility(Notification.VISIBILITY_PUBLIC)
           .setOngoing(true)
           .setOnlyAlertOnce(true)
-          .setContentIntent(contentPi)
+          .setContentIntent(cachedContentPi)
           .setStyle(new android.app.Notification.MediaStyle()
               .setMediaSession(session == null ? null : session.getSessionToken()));
       return builder.build();
@@ -587,13 +573,11 @@ public class YayaExoService extends Service {
 
   @Override
   public void onTaskRemoved(Intent rootIntent) {
-    Log.i("YayaExo", "[sysdbg] onTaskRemoved exoNull=" + (exo == null));
     super.onTaskRemoved(rootIntent);
   }
 
   @Override
   public void onDestroy() {
-    Log.i("YayaExo", "[sysdbg] onDestroy");
     stopPolling();
     destroySession();
     if (exo != null) { try { exo.release(); } catch (Throwable ignored) {} exo = null; }

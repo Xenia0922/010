@@ -62,8 +62,10 @@ export const MusicEngine = {
   // 播放请求序号：快速连点 play/resume 时递增，仅最新请求的 URL 解析结果可写回 store，
   // 防止慢响应（旧曲目解析晚于新曲目）覆盖当前播放曲目导致「播错歌」。
   _playSeq: 0,
-  // 预热地址缓存：trackKey → 已解析 URL（预加载下一首/起播提速，AWS 冷边首连慢）
+  // 预热地址缓存：trackKey → 已解析 URL（预加载下一首/起播提速，AWS 冷边首连慢）。
+  // Map 保插入序，超上限丢最旧 —— 长会话/大歌单防无限增长（URL 是长串，几百首≈数百 KB）
   _warmUrls: new Map<string, string>(),
+  _warmUrlsMax: 40,
   // 切歌节流：Exo 事件（ended/cmd next/prev）有 App 全局 + 页面双监听器时防连切两首
   _skipTs: 0,
 
@@ -108,10 +110,20 @@ export const MusicEngine = {
       if (!resolver) return;
       resolver(nextTrack).then((url) => {
         if (!url || !/^https?:/i.test(url)) return;
-        this._warmUrls.set(trackKey(nextTrack), url);
+        this._cacheWarmUrl(trackKey(nextTrack), url);
         this._warmUrl(url);
       }).catch(() => {});
     });
+  },
+
+  /** 写预热缓存并裁剪超限项（Map 插入序 = 最旧优先删） */
+  _cacheWarmUrl(key: string, url: string): void {
+    this._warmUrls.set(key, url);
+    while (this._warmUrls.size > this._warmUrlsMax) {
+      const oldest = this._warmUrls.keys().next();
+      if (!oldest.done) this._warmUrls.delete(oldest.value);
+      else break;
+    }
   },
 
   /**
@@ -129,7 +141,7 @@ export const MusicEngine = {
     try {
       const url = await resolver(track);
       if (url && /^https?:/i.test(url) && isPlayableHost(url)) {
-        this._warmUrls.set(key, url);
+        this._cacheWarmUrl(key, url);
         return url;
       }
     } catch {}

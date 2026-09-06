@@ -24,12 +24,10 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onCreate")
   }
 
   override fun onPause() {
     super.onPause()
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onPause")
     // 离开前台（按 Home/切应用/进通知栏）前重声明 Exo 会话：
     // ColorOS 在「音乐页→App 首页→再切后台」路径上把媒体卡绑到过期会话状态 → 通知栏/锁屏控件失灵。
     // 关键点：此路径在切后台前没有 onResume（导航回首页不触发 resume），
@@ -45,7 +43,6 @@ class MainActivity : ReactActivity() {
 
   override fun onResume() {
     super.onResume()
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onResume")
     // 回前台：停掉后台补发窗口，然后立即重声明一次（覆盖回前台瞬间的会话刷新）
     reassertHandler.removeCallbacks(delayedReassert)
     reassertExoSession()
@@ -53,16 +50,13 @@ class MainActivity : ReactActivity() {
 
   override fun onStop() {
     super.onStop()
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onStop")
   }
 
   override fun onStart() {
     super.onStart()
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onStart")
   }
 
   override fun onDestroy() {
-    android.util.Log.i("YayaExo", "[sysdbg] MainActivity onDestroy")
     super.onDestroy()
   }
 

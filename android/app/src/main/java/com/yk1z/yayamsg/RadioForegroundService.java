@@ -136,27 +136,22 @@ public class RadioForegroundService extends Service {
     mediaSession.setCallback(new MediaSession.Callback() {
       @Override
       public void onPlay() {
-        android.util.Log.i("YayaRadio", "[sysdbg] OLD session CMD onPlay");
         RadioServiceModule.emitControl(getApplicationContext(), "play");
       }
       @Override
       public void onPause() {
-        android.util.Log.i("YayaRadio", "[sysdbg] OLD session CMD onPause");
         RadioServiceModule.emitControl(getApplicationContext(), "pause");
       }
       @Override
       public void onSkipToNext() {
-        android.util.Log.i("YayaRadio", "[sysdbg] OLD session CMD next");
         RadioServiceModule.emitControl(getApplicationContext(), "next");
       }
       @Override
       public void onSkipToPrevious() {
-        android.util.Log.i("YayaRadio", "[sysdbg] OLD session CMD prev");
         RadioServiceModule.emitControl(getApplicationContext(), "prev");
       }
       @Override
       public void onSeekTo(long pos) {
-        android.util.Log.i("YayaRadio", "[sysdbg] OLD session CMD seek pos=" + pos);
         // 系统媒体条拖动：通知 JS seek（value=毫秒）
         RadioServiceModule.emitControlWithValue(getApplicationContext(), "seek", (double) pos);
       }
