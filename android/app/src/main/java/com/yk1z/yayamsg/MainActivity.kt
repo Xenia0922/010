@@ -31,7 +31,12 @@ class MainActivity : ReactActivity() {
     // 视频（直播/录播/网页）在播并被系统小窗（PiP）接管时，绝不重声明音乐会话——
     // 否则 SystemUI 的 PiP/媒体控件会绑到音乐而非画面中的视频（用户反馈"控件控制的是音乐"根因之一）。
     // 仅无视频在播（听歌/一般页面切后台）才补发音乐会话重声明。
-    if (PipModule.videoPlaying) return
+    if (PipModule.videoPlaying) {
+      // 系统小窗开关关闭：切后台不自动进 PiP，视频将随 Activity 后台停止 —— 顺手停掉
+      // "暂停残留"的音乐前台服务，避免 SystemUI 媒体卡残留 App 的（音乐）控件。
+      if (!PipModule.pipEnabled) stopMusicIfIdle()
+      return
+    }
     // 离开前台（按 Home/切应用/进通知栏）前重声明 Exo 会话：
     // ColorOS 在「音乐页→App 首页→再切后台」路径上把媒体卡绑到过期会话状态 → 通知栏/锁屏控件失灵。
     // 关键点：此路径在切后台前没有 onResume（导航回首页不触发 resume），
@@ -74,13 +79,14 @@ class MainActivity : ReactActivity() {
   }
 
   /**
-   * 用户按 Home / 切到其他应用时：若 RN 侧标记有视频在播，自动进入画中画悬浮窗。
+   * 用户按 Home / 切到其他应用时：若设置了"画中画"开关且 RN 侧标记有视频在播，
+   * 自动进入画中画悬浮窗；开关关闭则绝不弹 App 外系统小窗（用户没主动要小窗就不加载）。
    * （RN 侧在播放器 onLoad 时 setVideoPlaying(true)，onEnd/onError/暂停时置 false）
    */
   override fun onUserLeaveHint() {
     super.onUserLeaveHint()
-    if (PipModule.videoPlaying
-        && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+    if (!PipModule.videoPlaying || !PipModule.pipEnabled) return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
         && !isInPictureInPictureMode) {
       try {
         enterPictureInPictureMode(PipModule.buildPipParams())
@@ -90,15 +96,19 @@ class MainActivity : ReactActivity() {
       // 视频小窗接管媒体身份：音乐若只是"暂停/未起播"（服务与通知仍在）则彻底停掉，
       // 释放其 MediaSession，避免 SystemUI 把 PiP/通知卡控件绑到音乐上。
       // 音乐真正在放（playWhenReady，罕见双音场景）则不打断。
-      if (!YayaExoService.musicActuallyPlaying) {
-        try {
-          startService(
-            android.content.Intent(this, YayaExoService::class.java)
-              .putExtra("cmd", "stop")
-          )
-        } catch (_: Throwable) { }
-      }
+      stopMusicIfIdle()
     }
+  }
+
+  /** 音乐服务只是"暂停残留"（无真实播放）则彻底停掉：撤前台通知、释放 MediaSession */
+  private fun stopMusicIfIdle() {
+    if (YayaExoService.musicActuallyPlaying) return
+    try {
+      startService(
+        android.content.Intent(this, YayaExoService::class.java)
+          .putExtra("cmd", "stop")
+      )
+    } catch (_: Throwable) { }
   }
 
   /**

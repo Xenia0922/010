@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customBackgroundFile: '',
   customBackgroundUpdatedAt: 0,
   meet48Auth: null,
+  pip_auto: false,
 };
 
 export async function loadSettings(): Promise<AppSettings> {

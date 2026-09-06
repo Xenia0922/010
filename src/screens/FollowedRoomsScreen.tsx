@@ -33,7 +33,6 @@ import ScreenHeader from '../components/ScreenHeader';
 import { Member, RoomMessage } from '../types';
 import { formatTimestamp } from '../utils/format';
 import { findMediaDurationSeconds } from '../utils/mediaDuration';
-import { setPipPlaying } from '../utils/pip';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import { usePlayerStore } from '../player/store/playerStore';
 import { useOnMicStore } from '../store/onMicStore';
@@ -1176,12 +1175,6 @@ export default function FollowedRoomsScreen() {
   const [liveResolve, setLiveResolve] = useState<null | { key: string; error: string; media: RoomMedia }>(null);
   const liveResolveToken = useRef(0);
 
-  // 画中画（悬浮窗）状态同步：房间播放器打开且未全屏时置位
-  useEffect(() => {
-    // 应用内小窗已接管 PiP 标志时不覆盖（防小窗切后台不进悬浮窗）
-    if (useMiniPlayerStore.getState().visible) return;
-    setPipPlaying(!!roomPlayer && !roomPlayerFullscreen);
-  }, [roomPlayer, roomPlayerFullscreen]);
   const [rankVisible, setRankVisible] = useState(false);
   // 房间直播送礼（与 Media 页同 API；roomPlayer 面板此前漏接）
   const [giftVisible, setGiftVisible] = useState(false);
@@ -1326,15 +1319,9 @@ export default function FollowedRoomsScreen() {
   const handleRoomMiniPlayer = useCallback(() => {
     const cur = roomPlayer;
     if (!cur?.url) return;
-    const lower = String(cur.url || '').toLowerCase();
-    const needsNativeLive = !!cur.isLive && (lower.startsWith('rtmp://') || lower.includes('.flv'));
-    if (needsNativeLive) {
-      // RTMP / FLV 直播流在小窗（原生 LiveExoView 小尺寸 SurfaceView）无法稳定播放，
-      // 直接全屏观看（房间内原生播放器可正常播），不进入小窗。
-      setRoomPlayerFullscreen(true);
-      showToast(t('RTMP 直播请直接全屏观看'));
-      return;
-    }
+    // 成员直播（口袋48 房间流 = rtmp/flv，见 resolveRoomLiveMedia）也能进小窗：
+    // MiniPlayer 对 rtmp/.flv + isLive 的 url 渲染原生 LiveExoView（与大播放器同内核），
+    // 录播/HLS 走 RNV Video —— 全部交 MiniPlayer 内部路由，不再全屏拦截。
     // 录播转小窗续播：读取当前播放位置（统一播放器 store 实时 position），
     // 传给小窗做 onLoad seek + backTo 供回大窗 Media 续播（此前写死 0 = 重头放）
     let pos = 0;

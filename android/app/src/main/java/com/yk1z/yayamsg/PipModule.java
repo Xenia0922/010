@@ -38,6 +38,12 @@ import com.facebook.react.modules.core.DeviceEventManagerModule;
 public class PipModule extends ReactContextBaseJavaModule {
   /** RN 侧标记当前是否有视频在播：true 时切后台自动进 PiP */
   public static volatile boolean videoPlaying = false;
+  /**
+   * 系统小窗（PiP）总开关：RN 侧启动/设置页同步。false = 即使有视频在播，
+   * MainActivity.onUserLeaveHint 也不自动进系统悬浮窗（用户未主动要小窗就不弹）。
+   * 默认 false（不持久化：App 每次冷启由 JS 从设置 store 同步，早于任何 videoPlaying 置位）。
+   */
+  public static volatile boolean pipEnabled = false;
   /** PiP 窗口宽高比（跟随视频内容，默认 16:9；竖屏视频切后台悬浮窗也是竖的） */
   private static volatile float pipAspectW = 16f;
   private static volatile float pipAspectH = 9f;

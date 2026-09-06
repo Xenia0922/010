@@ -236,6 +236,7 @@ export function MiniPlayer() {
         ) : isNativeLive && NativeLiveView ? (
           /* RTMP/FLV 直播流：ExoPlayer 不支持，必须用原生 LiveExoView（与大播放器一致） */
           <NativeLiveView
+            key={info.url}
             style={StyleSheet.absoluteFill}
             url={info.url}
             onSize={(e) => {

@@ -11,6 +11,17 @@ export function setPipPlaying(playing: boolean) {
   } catch { /* ignore */ }
 }
 
+/**
+ * 画中画（系统小窗）总开关：false 时 MainActivity.onUserLeaveHint 不会自动进 PiP
+ * （用户没主动要小窗，切后台就不该弹出 App 外系统悬浮窗）。设置页开关同步调用。
+ */
+export function setPipEnabled(enabled: boolean) {
+  if (Platform.OS !== 'android' || !Pip?.setPipEnabled) return;
+  try {
+    Pip.setPipEnabled(!!enabled);
+  } catch { /* ignore */ }
+}
+
 /** 手动进入画中画悬浮窗（播放器"小窗"按钮） */
 export function enterPipMode() {
   if (Platform.OS !== 'android' || !Pip?.enterPip) return;

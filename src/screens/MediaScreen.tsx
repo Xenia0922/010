@@ -1199,18 +1199,12 @@ export default function MediaScreen() {
     if (route.params?.fromRoom) navigation.goBack();
   };
 
-  // 应用内小窗：当前播放交棒给悬浮小窗（小窗独立 Video 实例续播），关掉大播放器
+  // 应用内小窗：当前播放交棒给悬浮小窗（小窗独立 Video/LiveExoView 实例续播），关掉大播放器。
+  // RTMP/FLV 直播也放行：MiniPlayer 对 rtmp/.flv + isLive 渲染原生 LiveExoView（与大播放器同内核），
+  // 录播/HLS 走 RNV Video —— 不再全屏拦截（此前拦截导致成员直播「小窗点了没用」）。
   const handleMiniPlayer = useCallback(() => {
     const cur = playing;
     if (!cur?.url) return;
-    const lower = String(cur.url || '').toLowerCase();
-    const needsNativeLive = !!cur.isLive && (lower.startsWith('rtmp://') || lower.includes('.flv'));
-    if (needsNativeLive) {
-      // RTMP / FLV 直播流在小窗（原生 LiveExoView 小尺寸 SurfaceView）无法稳定播放，
-      // 保持全屏观看，不进入小窗。
-      setIsFullscreen(true);
-      return;
-    }
     useMiniPlayerStore.getState().open({
       url: cur.url,
       title: cur.title,
@@ -1225,7 +1219,7 @@ export default function MediaScreen() {
       },
     });
     closePlayer();
-  }, [playing, playbackTime, closePlayer, setIsFullscreen]);
+  }, [playing, playbackTime, closePlayer]);
 
   // v2.6: came from room (explicit fromRoom flag) → hide list, back goes to room
   // 注意：不能仅凭 playLiveId 判断——首页直播卡跳转也带 playLiveId，

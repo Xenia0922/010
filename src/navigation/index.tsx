@@ -5,6 +5,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Animated, Easing, ImageBackground, StyleSheet, View } from 'react-native';
 import { useSettingsStore, useUiStore, useUpdateStore } from '../store';
+import { setPipEnabled, listenPipToggle } from '../utils/pip';
 import { Palettes } from '../theme/colors';
 import { ensureMemberData } from '../services/memberData';
 import { RootStackParamList, TabParamList } from './types';
@@ -12,7 +13,6 @@ import { AppTabBar, MCI } from '../components/AppTabBar';
 import { MiniPlayer } from '../components/MiniPlayer';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
 import { usePlayerStore } from '../player/store/playerStore';
-import { listenPipToggle } from '../utils/pip';
 import { usePalette } from '../theme';
 import HomeScreen from '../screens/HomeScreen';
 import MessagesScreen from '../screens/MessagesScreen';
@@ -231,6 +231,12 @@ const AppDarkTheme = {
  * 全局只挂一次（导航根），PiP 期间 JS 存活即可达。
  */
 function PipToggleBridge() {
+  // 画中画开关 → 原生（默认关：不主动调用不弹 App 外系统小窗；设置页开启后切后台才自动 PiP）
+  const pipAuto = useSettingsStore((s) => s.settings.pip_auto);
+  useEffect(() => {
+    setPipEnabled(!!pipAuto);
+  }, [pipAuto]);
+
   useEffect(() => {
     return listenPipToggle(() => {
       try {

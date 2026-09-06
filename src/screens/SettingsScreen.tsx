@@ -25,6 +25,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList, TabParamList } from '../navigation/types';
 import { useSettingsStore, useUiStore, useMemberStore, useUpdateStore } from '../store';
 import { saveSettings } from '../services/settings';
+import { setPipEnabled } from '../utils/pip';
 import ScreenHeader from '../components/ScreenHeader';
 import { Button } from '../components/Button';
 import { FadeInView, ScalePressable } from '../components/Motion';
@@ -302,6 +303,24 @@ export default function SettingsScreen() {
         <Section title={t('语言')} delay={180}>
           <View style={styles.innerPad}>
             <ChipRow options={LANGUAGE_OPTIONS.map((o) => ({ ...o, label: o.value === 'system' ? t(o.label) : o.label }))} value={settings.language || 'system'} onChange={(v) => update('language', v)} />
+          </View>
+        </Section>
+
+        {/* 小窗（画中画） */}
+        <Section title={t('小窗播放')} delay={200}>
+          <View style={styles.innerPad}>
+            <Text style={[styles.rowLabel, { color: palette.labelSecondary }]}>{t('切到后台自动弹出系统小窗')}</Text>
+            <ChipRow
+              options={[{ label: t('关闭'), value: false as any }, { label: t('开启'), value: true as any }]}
+              value={settings.pip_auto}
+              onChange={(v) => {
+                setPipEnabled(!!v);
+                update('pip_auto', v);
+              }}
+            />
+            <Text style={[styles.note, { color: palette.labelTertiary }]}>
+              {t('关闭后，播放视频时切到后台不会弹出系统小窗（可用播放器内小窗在应用内继续看）；开启后切后台自动以系统小窗继续播放')}
+            </Text>
           </View>
         </Section>
 
