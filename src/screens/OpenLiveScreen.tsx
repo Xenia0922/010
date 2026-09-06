@@ -26,7 +26,6 @@ import { translate, useI18n } from '../i18n';
 import { enqueueDownload } from '../services/downloads';
 import { errorMessage, normalizeUrl, parseMaybeJson, pickText, unwrapList } from '../utils/data';
 import { formatTimestamp } from '../utils/format';
-import { openNativeLivePlayer } from '../native/LivePlayer';
 import { usePalette } from '../theme';
 
 interface OpenLiveItem {
@@ -149,11 +148,6 @@ function pickPlayableUrl(res: any) {
   return Array.from(new Set(urls)).sort((a, b) => scoreStream(b) - scoreStream(a))[0] || '';
 }
 
-function needsNative(url: string) {
-  const lower = url.toLowerCase();
-  return lower.startsWith('rtmp://') || lower.includes('.flv');
-}
-
 function shortMemberName(member?: Member | null) {
   return String(member?.ownerName || '').replace(/^(SNH48|GNZ48|BEJ48|CKG48|CGT48)-/, '');
 }
@@ -241,11 +235,11 @@ export default function OpenLiveScreen() {
     setStatus(t('正在解析播放地址...'));
     try {
       const url = await resolveStream(item);
-      if (needsNative(url)) {
-        await openNativeLivePlayer(url, item.title, { liveId: item.liveId });
-      } else {
-        setPlaying({ url, title: item.title });
-      }
+      // 统一走 RN 播放器（PlayerScreen 含小窗按钮 → MiniPlayer），
+      // 原先 rtmp/.flv 分支走原生 LivePlayerActivity 完全脱离 RN，找不到小窗按钮
+      // （用户反馈「成员直播小窗在软件内点没用」的真因）。RN 端用同内核 LiveExoView
+      // 渲染 rtmp/flv，与 native 播放器画面/音频一致，应用内小窗从此可达。
+      setPlaying({ url, title: item.title });
       setStatus(t('播放地址已就绪'));
     } catch (error) {
       const text = t('播放失败：{error}', { error: errorMessage(error) });

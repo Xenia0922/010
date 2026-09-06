@@ -430,6 +430,21 @@ export function PlayerChrome({ features = {}, extraActions = [], onClose, inline
                 />
               </TouchableOpacity>
             ) : null}
+            {/* 「小窗」按钮直接放 dock（用户反馈「小窗在软件内点没用」真因之一：原 extraActions
+                藏在右上「...」二级菜单，用户找不到）。从 extraActions 提 pip 渲染到 dock 直达。 */}
+            {(() => {
+              const pipAction = extraActions.find((a) => a.key === 'pip');
+              if (!pipAction) return null;
+              return (
+                <TouchableOpacity
+                  style={styles.ctrlBtn}
+                  onPress={() => { pipAction.onPress(); showControls(); }}
+                  activeOpacity={0.75}
+                >
+                  <MaterialCommunityIcons name="picture-in-picture-bottom-right-outline" size={20} color="rgba(255,255,255,0.92)" />
+                </TouchableOpacity>
+              );
+            })()}
             {!inline || fullscreen ? (
               <TouchableOpacity style={styles.ctrlBtn} onPress={toggleFullscreen} activeOpacity={0.75}>
                 <MaterialCommunityIcons name={fullscreen ? 'fullscreen-exit' : 'fullscreen'} size={21} color="rgba(255,255,255,0.92)" />

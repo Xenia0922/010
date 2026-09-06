@@ -320,9 +320,19 @@ export default function MusicLibraryScreen() {
   const armedUrlRef = useRef('');
   /** 最近一次收到原生 progress 的时间戳（判断原生活跃度，失联 >8s 允许重推） */
   const lastProgressTsRef = useRef(0);
+  /**
+   * 最近一次镜像到 store 的 playing 状态：progress 事件里 `playing` 边沿变化时
+   * 才回写 store.playbackState（系统控件暂停/恢复、上首/下首后的真实态会随下一次
+   * progress 推过来），避免高频心跳反复 setState 触发全树重渲与转盘动画抖动。
+   * 注释里"App 全局 MusicForegroundBridge 常驻处理"实际从未实现——这是用户反馈
+   *「系统控件点恢复后回 App 黑胶转盘不转」的真因：原生已在播但 JS 侧 store 永远停在 paused。
+   */
+  const lastMirroredPlayingRef = useRef<boolean | null>(null);
   // ⚠️ 系统卡 暂停/恢复/上一首/下一首/播完切歌 统一由 App 全局 MusicForegroundBridge 常驻处理
   // （页面无关；页面只做「下发 + 确认 + 降级」，不再私有处理 cmd/ended/pause-mirror——
   // 旧实现页面挂载时与 App 全局双监听，行为随导航状态漂移：音乐页在/不在，系统控件手感不一致）。
+  // 注：实际播放态镜像在本页 progress 分支按"边沿变化"补回 store（lastMirroredPlayingRef），
+  // 避免依赖一个不存在的全局桥——也保证 ColorOS 冻结后台 JS 后回前台进度事件到达时能立即同步。
 
   useEffect(() => subscribeExo((type, p: any) => {
     try {
@@ -330,6 +340,13 @@ export default function MusicLibraryScreen() {
       if (type === 'progress') {
         lastProgressTsRef.current = Date.now();
         const playingN = !!p?.playing;
+        // 播放态镜像（边沿触发）：系统控件/通知栏/锁屏点恢复后，原生 exo.play() 推的
+        // 第一次 progress.playing=true 会把 store 切到 playing → 转盘恢复转动；
+        // 反之点暂停把 store 切 paused。这是 MusicForegroundBridge 注释承诺但从未实现的回写。
+        if (st.url && lastMirroredPlayingRef.current !== playingN) {
+          st.setPlaybackState(playingN ? 'playing' : 'paused');
+          lastMirroredPlayingRef.current = playingN;
+        }
         // 切歌竞态防护：旧曲心跳不写位置/时长（进度条回跳根因候选）
         const staleUrl = !!p?.url && !!st.url && String(p.url) !== String(st.url);
         if (!staleUrl) {
@@ -337,7 +354,6 @@ export default function MusicLibraryScreen() {
           if (typeof p?.position === 'number') st.setPosition(p.position);
         }
         if (playingN) cancelArmTimer(); // Exo 已在原生出声 → 候选确认
-        // 播放态回写（系统卡暂停/恢复→App 图标）由 App 全局滞回处理，本页不重复
       } else if (type === 'error') {
         // 原生播放失败 → 本次会话降级 RNV（Video volume/paused 由 nativeOk=false 自动接管）
         if (!nativeDisabledRef.current) {
