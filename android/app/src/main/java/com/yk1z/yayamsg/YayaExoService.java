@@ -379,7 +379,11 @@ public class YayaExoService extends Service {
   private void pushState() {
     if (session == null || exo == null) return;
     try {
+      // 全量标准动作位：PLAY_PAUSE|PLAY|PAUSE|STOP|SEEK|NEXT|PREV —— ColorOS 面板按 actions 位决定
+      // 按钮可用性；此前漏 NEXT/PREV 会导致上一首/下一首按钮"看着在、点着没反应"。
       long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+          | PlaybackState.ACTION_PLAY_PAUSE
+          | PlaybackState.ACTION_STOP
           | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS
           | PlaybackState.ACTION_SEEK_TO;
       boolean playing = exo.getPlayWhenReady() && exo.getPlaybackState() != Player.STATE_ENDED;
@@ -390,6 +394,8 @@ public class YayaExoService extends Service {
           .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
               exo.getCurrentPosition(), playing ? 1.0f : 0f, android.os.SystemClock.elapsedRealtime())
           .build();
+      Log.i("YayaExo", "[sysdbg] pushState actions=" + actions + " state=" + (playing ? "PLAY" : "PAUSE")
+          + " pos=" + exo.getCurrentPosition());
       session.setPlaybackState(ps);
       MediaMetadata.Builder b = new MediaMetadata.Builder();
       b.putString(MediaMetadata.METADATA_KEY_TITLE, title.isEmpty() ? "牙牙消息" : title);

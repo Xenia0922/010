@@ -11,6 +11,13 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
+  private val reassertHandler = android.os.Handler(android.os.Looper.getMainLooper())
+  private val delayedReassert = object : Runnable {
+    override fun run() { reassertExoSession() }
+  }
+  /** onPause 后延迟窗口内的补发点（ms）：ColorOS SystemUI 构建媒体卡通常滞后于 Home 键瞬间 */
+  private val reassertBackoff = longArrayOf(400, 1200, 3200)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     // Set the theme to AppTheme BEFORE onCreate to support
     // coloring the background, status bar, and navigation bar.
@@ -27,12 +34,20 @@ class MainActivity : ReactActivity() {
     // ColorOS 在「音乐页→App 首页→再切后台」路径上把媒体卡绑到过期会话状态 → 通知栏/锁屏控件失灵。
     // 关键点：此路径在切后台前没有 onResume（导航回首页不触发 resume），
     // 若只在 onResume 重声明，控件失灵的瞬间永远等不到修复 → 必须 onPause 也重声明一次。
+    // ⚠️ 且 SystemUI 的媒体卡/胶囊构建通常滞后 Home 键数百 ms~数秒——一次 onPause 重声明不够，
+    // 需要在退后台后的延迟窗口内再补发几次（覆盖 ColorOS 懒构建/懒绑定），直到前台恢复才停。
     reassertExoSession()
+    for (d in reassertBackoff) {
+      reassertHandler.removeCallbacks(delayedReassert)
+      reassertHandler.postDelayed(delayedReassert, d)
+    }
   }
 
   override fun onResume() {
     super.onResume()
     android.util.Log.i("YayaExo", "[sysdbg] MainActivity onResume")
+    // 回前台：停掉后台补发窗口，然后立即重声明一次（覆盖回前台瞬间的会话刷新）
+    reassertHandler.removeCallbacks(delayedReassert)
     reassertExoSession()
   }
 
