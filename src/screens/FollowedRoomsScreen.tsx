@@ -1909,27 +1909,6 @@ export default function FollowedRoomsScreen() {
     });
   }, [followed, searchQuery, pinned]);
 
-  // 分区渲染：置顶 (N) / 成员 (N) — 平铺数组用 __header 标记，renderItem 分派
-  const partitionedData = useMemo(() => {
-    const out: Array<any> = [];
-    const pinnedSet = new Set(pinned);
-    const pinnedItems = filtered.filter((it) => pinnedSet.has(it.memberId));
-    const otherItems = filtered.filter((it) => !pinnedSet.has(it.memberId));
-    if (pinnedItems.length > 0) {
-      out.push({ __header: true, key: 'h-pin', section: 'pinned', count: pinnedItems.length });
-      out.push(...pinnedItems);
-    }
-    if (otherItems.length > 0) {
-      out.push({ __header: true, key: 'h-oth', section: 'others', count: otherItems.length });
-      out.push(...otherItems);
-    }
-    return out;
-  }, [filtered, pinned]);
-
-  // 置顶区内长按拖动排序：RNGH Pan 长按 400ms 激活 + 跟手 translateY + 松手按 dy 落位
-  // （拖动实现未启用；当前仅长按弹 Alert, 用户后续要求时再补 drag）
-  // const [dragId, setDragId] = useState<string | null>(null);
-  // const [dragY, setDragY] = useState(0);
 
   // 搜索时从全量成员库匹配（未关注的成员可直接在此关注）
   const memberHits = useMemo(() => {
@@ -2608,19 +2587,10 @@ export default function FollowedRoomsScreen() {
         ) : (
         <PerfFlatList
           key="rooms-list"
-          data={partitionedData}
-          keyExtractor={(item: any, index) => String(item.__header ? `h-${item.section}` : item.memberId)}
+          data={filtered}
+          keyExtractor={(item: any, index) => String(item.memberId)}
           contentContainerStyle={styles.listContent}
           renderItem={({ item, index }) => {
-            // 分区 header（小节标题）
-            if (item.__header) {
-              const sec = item.section === 'pinned' ? t('置顶 ({n})', { n: item.count }) : t('成员 ({n})', { n: item.count });
-              return (
-                <View style={styles.sectionHeaderWrap}>
-                  <Text style={[styles.sectionHeaderText, { color: palette.labelSecondary }]}>{sec}</Text>
-                </View>
-              );
-            }
             const fid = String(item.member?.id || item.memberId);
             const isFollowing = followedIds.has(fid);
             const busy = followBusy.has(fid);
@@ -2966,6 +2936,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
+    // 等高：内容行数少(仅大消息/无小房间/无 team)的成员也拉到与多行成员一致高度
+    minHeight: 112,
   },
   roomRowMain: {
     flex: 1,
