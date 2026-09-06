@@ -2646,67 +2646,61 @@ export default function FollowedRoomsScreen() {
                         </View>
                       ) : null}
                     </View>
-                    {/* 信息区恒定两行(名字行+预览行)保证卡片等高：团队并入预览前缀、时间放行尾 */}
+                    {/* 房间列表信息区恢复原版布局：team 独立行 + 大房间预览 + 小房间预览
+                        行间紧排, 总高压缩在封面区 80px 内 → 全部卡恒高, 等高 */}
+                    {team ? (
+                      <Text style={[styles.roomTeam, { color: palette.labelTertiary }]} numberOfLines={1}>{team}</Text>
+                    ) : null}
+                    {lastText ? (
+                      <View style={styles.lastRow}>
+                        <View style={[styles.lastTag, { backgroundColor: palette.tintSoft }]}>
+                          <Text style={[styles.lastTagText, { color: palette.tint }]}>{t('大')}</Text>
+                        </View>
+                        <Text style={[styles.roomLast, { color: palette.labelSecondary, marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                          {lastText}
+                        </Text>
+                      </View>
+                    ) : null}
                     {(() => {
                       const sMsg = item.lastSmallMessage;
-                      const sText = sMsg ? messageText(sMsg) : '';
-                      const sTime = Number(sMsg?.msgTime || sMsg?.ctime || 0);
-                      const bigText = lastText;
-                      const useSmall = sText && sText !== bigText && sTime > lastTime;
-                      const showText = (useSmall || !bigText) && sText ? sText : bigText;
-                      const tag = useSmall || !bigText ? '小' : '大';
-                      const tagOnTint = (useSmall || !bigText);
+                      if (!sMsg) return null;
+                      const sText = messageText(sMsg);
+                      if (!sText || sText === lastText) return null;
                       return (
                         <View style={styles.lastRow}>
-                          {showText ? (
-                            <View style={[styles.lastTag, { backgroundColor: tagOnTint ? palette.fill2 : palette.tintSoft }]}>
-                              <Text style={[styles.lastTagText, { color: tagOnTint ? palette.labelSecondary : palette.tint }]}>{tag}</Text>
-                            </View>
-                          ) : null}
-                          <Text style={[styles.roomLast, { color: palette.labelSecondary, marginTop: 0, flex: 1 }]} numberOfLines={1}>
-                            {team ? (
-                              <Text style={[styles.roomTeamInline, { color: palette.labelTertiary }]}>{team} · </Text>
-                            ) : null}
-                            {showText || t('点击查看房间消息')}
+                          <View style={[styles.lastTag, { backgroundColor: palette.fill2 }]}>
+                            <Text style={[styles.lastTagText, { color: palette.labelSecondary }]}>{t('小')}</Text>
+                          </View>
+                          <Text style={[styles.roomLast, { color: palette.labelTertiary }]} numberOfLines={1}>
+                            {sText}
                           </Text>
-                          {lastTime && showText ? (
-                            <Text style={[styles.lastTimeSmall, { color: palette.labelTertiary }]} numberOfLines={1}>
-                              {formatTimestamp(lastTime).slice(5, 16)}
-                            </Text>
-                          ) : null}
                         </View>
                       );
                     })()}
                   </View>
                 </ScalePressable>
                 <View style={styles.roomActions}>
-                  {isPinned && pinned.length > 1 ? (
-                    /* 排序胶囊：单个圆角方块内竖向排列 ↑ / ↓，整体像一个排序手柄 */
-                    <View style={[styles.sortCapsule, { backgroundColor: palette.fill2, borderColor: palette.hairline }]}>
-                      <ScalePressable
-                        style={styles.sortHalfV}
-                        onPress={() => movePin(item.memberId, -1)}
-                        pressedScale={0.8}
-                        hitSlop={{ top: 4, bottom: 1, left: 6, right: 6 }}
-                        disabled={pinned.indexOf(item.memberId) === 0}
-                      >
-                        <MaterialCommunityIcons name="chevron-up" size={14} color={pinned.indexOf(item.memberId) === 0 ? palette.labelTertiary : palette.labelSecondary} />
-                      </ScalePressable>
-                      <View style={[styles.sortDividerV, { backgroundColor: palette.innerStroke }]} />
-                      <ScalePressable
-                        style={styles.sortHalfV}
-                        onPress={() => movePin(item.memberId, 1)}
-                        pressedScale={0.8}
-                        hitSlop={{ top: 1, bottom: 4, left: 6, right: 6 }}
-                        disabled={pinned.indexOf(item.memberId) === pinned.length - 1}
-                      >
-                        <MaterialCommunityIcons name="chevron-down" size={14} color={pinned.indexOf(item.memberId) === pinned.length - 1 ? palette.labelTertiary : palette.labelSecondary} />
-                      </ScalePressable>
-                    </View>
-                  ) : null}
                   <ScalePressable
                     style={[styles.roomPinBtn, { backgroundColor: isPinned ? palette.tintSoft : palette.fill2 }]}
                     onPress={() => togglePin(item.memberId)}
+                    onLongPress={() => {
+                      // 长按置顶徽标弹出上下移菜单(原本右侧排序胶囊占用 31px 高度
+                      // 导致置顶成员卡比非置顶高 ~37px; 改成 sheet 后 actions 列高度恒定,
+                      // 所有卡片等高)
+                      if (!isPinned || pinned.length <= 1) return;
+                      const i = pinned.indexOf(item.memberId);
+                      Alert.alert(
+                        t('置顶排序'),
+                        shortName(item.member, item.memberId),
+                        [
+                          { text: t('上移'), onPress: () => i > 0 && movePin(item.memberId, -1) },
+                          { text: t('下移'), onPress: () => i < pinned.length - 1 && movePin(item.memberId, 1) },
+                          { text: t('取消置顶'), style: 'destructive', onPress: () => togglePin(item.memberId) },
+                          { text: t('取消'), style: 'cancel' },
+                        ],
+                      );
+                    }}
+                    delayLongPress={350}
                     pressedScale={0.9}
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
