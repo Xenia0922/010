@@ -155,7 +155,11 @@ export function MiniPlayer() {
   useEffect(() => {
     const active = visible && playing && !!info?.url;
     const sub = DeviceEventEmitter.addListener('PipEnteredChanged', (entered: boolean) => {
-      setPipPlaying(entered && active);
+      // 只在「进 PiP」方向兜底置位 videoPlaying；退出方向**不动**——
+      // 否则：用户点 PiP 展开回 app → entered=false → videoPlaying 被误清为 false →
+      // 之后再按 Home 时 onUserLeaveHint 看到 videoPlaying=false 直接 return，悬浮窗不弹。
+      // videoPlaying 标志只应由真实播放态（上方 147 行 effect）管，不该被退出事件踩掉。
+      if (entered && active) setPipPlaying(true);
       // 仅 pip_auto 开启（会真正进系统 PiP）时才全屏盖层
       setPipCover(entered && active && pipAuto);
     });

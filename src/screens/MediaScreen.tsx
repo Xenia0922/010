@@ -1473,6 +1473,17 @@ export default function MediaScreen() {
   const videoBoxH = videoRotated ? screen.width : screen.height;
   const videoRotateDeg = `${videoRotate}deg`;
 
+  // PiP 退出兜底 remount key：Dimensions 在 Android 上对 windowMode 变化未必刷新，
+  // 万一 key 随 winW 没翻也没法触发 FlatList 重挂载 → 直接 bump 这个 nonce 强制 remount。
+  // 注意：这只是已知 MediaScreen 直播网格的局部兜底；其他类似 FlatList 屏按需补。
+  const [pipRemount, setPipRemount] = useState(0);
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('PipEnteredChanged', (entered: boolean) => {
+      if (!entered) setPipRemount((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
   // 按视频内容自动横/竖屏：横屏内容（宽>高）自动横屏，竖屏内容自动竖屏。
   // 用户手动切过方向（manualOrientRef）则不覆盖；每次新开视频重置标记。
   const autoOrient = useCallback((e: any) => {
@@ -1796,16 +1807,15 @@ export default function MediaScreen() {
 
       <View style={{ flex: 1 }}>
         <PerfFlatList
-          key={tab === 'vod' ? 'vod-1col' : 'live-2col'}
+          key={`${tab === 'vod' ? 'vod-1col' : 'live-2col'}-${screen.width}-${pipRemount}`}
           // 直播页去宣传栏（banner）：统一双列网格，即使只有 1 条直播也保持双列
           data={tab === 'vod' ? (vodRows ?? []) as any : list}
           keyExtractor={(item: any, index) => String(item?.liveId || item?.key || index)}
           numColumns={tab === 'vod' ? 1 : 2}
           columnWrapperStyle={tab === 'vod' ? null : styles.vodGridRow}
-          // ① extraData 跟窗口宽度：PiP 进出 → winW 变化触发整个列表重渲，
-          //   vodGridCover aspectRatio:1(高=宽) 重新测量,卡高恢复。
-          // ② 关 removeClippedSubviews:grid 仅几行,无虚拟化必要;
-          //   开则 Android 上 PiP/尺寸变化后子视图高度常被错误裁剪到 ≈0。
+          // PiP/横竖屏切换后 winW 变化:extraData 不足以让已 measure 的子节点重测(Yoga 不会自动),
+          // 整列表 key 含 width 触发 FlatList 重挂载,vodGridCover aspectRatio:1 重新参与布局。
+          // 同时关 removeClippedSubviews(grid 仅几行无虚拟化必要,且 Android PiP 后裁剪会留顶部残影)。
           extraData={screen.width}
           removeClippedSubviews={false}
           renderItem={({ item, index }) => {
