@@ -160,8 +160,9 @@ export function MiniPlayer() {
       // 之后再按 Home 时 onUserLeaveHint 看到 videoPlaying=false 直接 return，悬浮窗不弹。
       // videoPlaying 标志只应由真实播放态（上方 147 行 effect）管，不该被退出事件踩掉。
       if (entered && active) setPipPlaying(true);
-      // 仅 pip_auto 开启（会真正进系统 PiP）时才全屏盖层
-      setPipCover(entered && active && pipAuto);
+      // 全屏盖层无条件：不管 pip_auto(自动)还是手动点 dock 小窗进入 PiP,
+      // 只要真的进了系统 PiP, 快照就得是纯媒体, 不能是「页面+小窗」。
+      setPipCover(entered && active);
     });
     return () => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps

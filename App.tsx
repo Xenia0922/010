@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, ImageBackground, Modal, Image, TouchableOpacity, Linking, StyleSheet, Animated, Easing, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AppNavigator from './src/navigation';
 import { loadSettings } from './src/services/settings';
 import { useResolvedTheme } from './src/hooks/useAppTheme';
@@ -694,7 +693,7 @@ export default function App() {
   );
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <>
       {!ready ? (
         // 原生开屏已展示 app 图标（与开屏同色纯背景，避免黑屏闪烁）；签名 WebView 仍在后台预热。
         <View style={{ flex: 1, backgroundColor: splashBg }} />
@@ -718,7 +717,7 @@ export default function App() {
       <WebViewSigner />
       {/* 音乐前台保活（后台播放通知栏控制 + 防进程被杀） */}
       <MusicForegroundBridge />
-    </GestureHandlerRootView>
+    </>
   );
 }
 

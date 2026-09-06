@@ -1807,15 +1807,20 @@ export default function MediaScreen() {
 
       <View style={{ flex: 1 }}>
         <PerfFlatList
-          key={`${tab === 'vod' ? 'vod-1col' : 'live-2col'}-${screen.width}-${pipRemount}`}
+          key={tab === 'vod' ? 'vod-1col' : 'live-2col'}
           // 直播页去宣传栏（banner）：统一双列网格，即使只有 1 条直播也保持双列
           data={tab === 'vod' ? (vodRows ?? []) as any : list}
-          keyExtractor={(item: any, index) => String(item?.liveId || item?.key || index)}
+          keyExtractor={(item: any, index) => {
+            const base = String(item?.liveId || item?.key || index);
+            // ⚠️ PiP/横竖屏切换后需让 item 重挂以重测 aspectRatio:1(高=宽),
+            // 但用 FlatList key 整体 remount 会丢滚动位置 → 改为 keyExtractor 拼
+            // 窗口宽 + PiP 退出计数：cell 卸载重挂, VirtualizedList 保留 offset。
+            return `${base}_${screen.width}_${pipRemount}`;
+          }}
           numColumns={tab === 'vod' ? 1 : 2}
           columnWrapperStyle={tab === 'vod' ? null : styles.vodGridRow}
           // PiP/横竖屏切换后 winW 变化:extraData 不足以让已 measure 的子节点重测(Yoga 不会自动),
-          // 整列表 key 含 width 触发 FlatList 重挂载,vodGridCover aspectRatio:1 重新参与布局。
-          // 同时关 removeClippedSubviews(grid 仅几行无虚拟化必要,且 Android PiP 后裁剪会留顶部残影)。
+          // 关 removeClippedSubviews(grid 仅几行无虚拟化必要,且 Android PiP 后裁剪会留顶部残影)。
           extraData={screen.width}
           removeClippedSubviews={false}
           renderItem={({ item, index }) => {
