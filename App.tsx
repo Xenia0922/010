@@ -201,6 +201,16 @@ function MusicForegroundBridge() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackStateG]);
 
+  // 播放态 → 原生 单向镜像（App 级常驻，页面无关；替代原音乐页私有 mirror effect）：
+  // 应用内 暂停/继续（全屏播放器/迷你条/主页"继续播放"）必须落到原生 ExoPlayer；
+  // 仅当原生已知状态确实相反才下发（系统卡操作走原生回调已同步的状态不重复下发 → 防回声自激）。
+  useEffect(() => {
+    if (isNativeExoDisabled()) return; // RNV 降级：声音/会话由页面 Video + 旧自管服务负责
+    if (playbackStateG === 'paused' && lastNativePlayingRef.current) exoControl('pause');
+    else if (playbackStateG === 'playing' && !lastNativePlayingRef.current) exoControl('resume');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackStateG]);
+
   // M2：Exo 原生会话事件全局单点 —— 进度/位置实时写 store（离开音乐页后台播放时也同步）、
   // 播完自动切歌、系统卡上一首/下一首命令、暂停恢复滞回 —— 全部常驻，不依赖音乐页挂载。
   useEffect(() => subscribeExo((type, p: any) => {
@@ -209,9 +219,12 @@ function MusicForegroundBridge() {
         // Exo 激活（原声在播）→ 旧自管服务立即停用（双会话会让 ColorOS 绑旧会话）
         const playingN = !!p?.playing;
         lastNativePlayingRef.current = playingN;
-        if (playingN && !isNativeExoActive()) {
-          setNativeExoActive(true);
-          stopRadioForeground();
+        if (playingN) {
+          if (!isNativeExoActive()) setNativeExoActive(true);
+          // 原生在播确认 → 旧自管服务必须停。⚠️ 旧守卫 `!isNativeExoActive()` 实际永不触发：
+          // pushExoAfterSwitch 在尝试期已 setNativeExoActive(true)，导致残留 RadioForegroundService
+          // 双会话 → ColorOS/通知栏把媒体卡绑到旧会话 → 系统控件"失灵/像在打架"。
+          try { stopRadioForeground(); } catch {}
         }
         // 真实位置/时长全局同步（后台播放时 store 常真，回音乐页即见实际进度）
         const st = useMusicPlayerStore.getState();

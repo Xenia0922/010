@@ -236,6 +236,9 @@ export default function HomeScreen() {
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
   const livesRetryRef = useRef(0);
+  /** 最新成员直播列表快照（供失败分支判断"当前是否已有可展示数据"，避免空壳响应误清列表） */
+  const livesRef = useRef<LiveCardItem[]>([]);
+  useEffect(() => { livesRef.current = lives; }, [lives]);
 
   // 公演直播：B站直播间开播检测（仅五个团 SNH48/GNZ48/BEJ48/CGT48/CKG48，其余直播间不展示）
   const GONGYAN_ROOMS = useMemo(
@@ -250,32 +253,52 @@ export default function HomeScreen() {
   const gongyanTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const gongyanRetryRef = useRef(0);
   const gongyanHasDataRef = useRef(false);
+  /** 上一轮开播判定快照：B站单房间请求偶发失败/超时时保留上次状态（防在播行随单次失败闪没/重现"抽风"） */
+  const gongyanLiveRef = useRef<Record<string, boolean>>({});
+  /** 上一轮房间信息快照：info 请求失败时保留旧封面/标题（防封面闪回占位） */
+  const gongyanInfoRef = useRef<Record<string, { title: string; cover: string }>>({});
+  useEffect(() => { gongyanLiveRef.current = gongyanLive; }, [gongyanLive]);
+  useEffect(() => { gongyanInfoRef.current = gongyanInfo; }, [gongyanInfo]);
 
   const fetchGongyanStatus = useCallback(async () => {
     try {
       const rooms = await externalApi.fetchBilibiliConfig();
-      const filtered = rooms.filter((room) => GONGYAN_ROOMS.includes(String(room.name || '').trim()));
+      // 五团固定顺序（按 GONGYAN_ROOMS 序，非 B站接口返回序 —— 接口顺序跨轮不稳会导致行顺序跳动"抽风"）
+      const filtered = GONGYAN_ROOMS
+        .map((name) => rooms.find((room) => String(room.name || '').trim() === name))
+        .filter((room): room is BilibiliLiveRoom => !!room);
       // 并行检测开播状态（每请求 6s 竞速超时：B站接口不稳，单请求挂起不应拖住整个公演区）
       const results = await Promise.allSettled(
         filtered.map((room) => withTimeout(bilibiliApi.getRoomInit(room.roomId), BILI_FAST_TIMEOUT)),
       );
+      const prevLive = gongyanLiveRef.current;
       const next: Record<string, boolean> = {};
       filtered.forEach((room, index) => {
         const r = results[index];
-        next[room.roomId] = r.status === 'fulfilled' && !!r.value && Number(r.value?.data?.live_status) === 1;
+        if (r.status === 'fulfilled' && r.value) {
+          next[room.roomId] = Number(r.value?.data?.live_status) === 1;
+        } else {
+          // 单轮失败/超时：保留上次判定 —— 已开播的房间不因一次抖动被判"下播"而整行闪烁
+          next[room.roomId] = !!prevLive[room.roomId];
+        }
       });
       setGongyanLive(next);
       // 在播房间并行抓取封面 + 直播标题（公演行展示真实封面与场次标题；6s 竞速超时）
       const liveIds = filtered.filter((room) => next[room.roomId]).map((room) => room.roomId);
       const infoResults = await Promise.allSettled(liveIds.map((id) => withTimeout(bilibiliApi.getRoomInfo(id), BILI_FAST_TIMEOUT)));
+      const prevInfo = gongyanInfoRef.current;
       const infoMap: Record<string, { title: string; cover: string }> = {};
       infoResults.forEach((r, index) => {
+        const rid = liveIds[index];
         if (r.status === 'fulfilled' && r.value) {
           const d = r.value;
-          infoMap[liveIds[index]] = {
+          infoMap[rid] = {
             title: String(d.title || ''),
             cover: normalizeUrl(String(d.cover || d.user_cover || '')),
           };
+        } else {
+          // info 单轮失败：保留旧封面/标题（防在播行封面闪成占位图标）
+          infoMap[rid] = prevInfo[rid] || { title: '', cover: '' };
         }
       });
       setGongyanInfo(infoMap);
@@ -383,19 +406,34 @@ export default function HomeScreen() {
     )
       .then((res: any) => {
         if (!res) throw new Error('timeout');
+        // 空壳防护：官方接口偶发返回 success/200 但 content 无 liveList 字段（限流/风控/异常），
+        // 此时 normalizeLiveList 会解出空数组 → 误把"有直播"显示成"暂无成员直播"。
+        // 判定规则：结构里确实没有 liveList 数组 = 视为请求异常（保留旧数据走 catch），
+        // 只有结构完整且 liveList 真为空（此时无人开播）才落空态。
+        const rawList = (res?.content ?? res?.data ?? res)?.liveList;
+        if (!Array.isArray(rawList)) throw new Error('live list empty shell');
         const list = sortLivesByPreference(normalizeLiveList(res), followedIds, pinnedIds);
-        setLives(list);
-        setLivesOk(true);
-        setLivesError('');
-        livesRetryRef.current = 0;
         if (list.length) {
+          setLives(list);
+          setLivesOk(true);
+          setLivesError('');
+          livesRetryRef.current = 0;
           AsyncStorage.setItem(LIVES_CACHE_KEY, JSON.stringify(list)).catch(() => {});
+        } else if (livesRef.current.length === 0) {
+          // 结构完整但确实无人开播：仅在本地本就无数据时落空态；
+          // 已有旧数据时保留旧列表（直播可能刚下播/接口瞬时空，等下一轮轮询纠正）
+          setLives([]);
+          setLivesOk(true);
+          setLivesError('');
+          livesRetryRef.current = 0;
         }
       })
       .catch((e: any) => {
-        // 有缓存时网络失败不打断展示（保留缓存内容，仅静默）；
-        // 无缓存时：记错误态 + 5s 后自动重试（最多 3 次，网络抖动自愈，不必等手动点重试）
-        if (!fetchedRef.current) {
+        // 有缓存/已有列表时网络失败不打断展示（保留内容，仅静默）；
+        // 无任何数据时：记错误态 + 5s 后自动重试（最多 3 次，网络抖动自愈，不必等手动点重试）。
+        // ⚠️ 判断依据是"当前无可展示数据"，不是 fetchedRef（后者首屏已置 true，
+        // 用它会让首屏失败永不进入错误态/重试，只剩 60s 轮询兜底 → 首页整段空白）。
+        if (livesRef.current.length === 0) {
           setLivesError(e?.message || String(e));
           if (livesRetryRef.current < 3) {
             livesRetryRef.current += 1;
@@ -434,6 +472,10 @@ export default function HomeScreen() {
   // banner 轮播：2.5s 自动切换下一条（最多轮前 4 条），切换带 crossfade + 位移动画。
   // B1 修复：与直播/公演 60s 轮询一致，仅前台运行时切换（后台不跑动画/不空转，回前台立即恢复）。
   const bannerCount = Math.min(4, lives.length);
+  // B4 修复：渲染期安全下标 —— 轮询把 lives 变短（主播下播）时，bannerIndex 可能暂时越界；
+  // 仅靠 effect 收敛会先渲染一帧 lives[idx]=undefined → banner 整块消失 → 下方列表跳位“抽风”。
+  // 渲染期直接夹取，保证任何一帧 banner 都存在（dots 也跟随安全下标）。
+  const safeBannerIndex = bannerCount > 0 ? Math.min(bannerIndex, bannerCount - 1) : 0;
   useEffect(() => {
     if (bannerCount <= 1) return;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -450,7 +492,7 @@ export default function HomeScreen() {
           Animated.timing(fadeAnim, { toValue: 1, duration: 240, useNativeDriver: true }),
         ]).start();
         Animated.spring(slideAnim, { toValue: 0, speed: 26, bounciness: 5, useNativeDriver: true }).start();
-        setBannerIndex((i) => (i + 1) % bannerCount);
+        setBannerIndex((i) => ((i < 0 ? 0 : Math.min(i, bannerCount - 1)) + 1) % bannerCount);
       }, 2500);
     };
     const stopLoop = () => {
@@ -464,7 +506,7 @@ export default function HomeScreen() {
     return () => { sub.remove(); stopLoop(); };
   }, [bannerCount, fadeAnim, slideAnim]);
 
-  // B2 修复：lives 数量变化（60s 轮询）后 bannerIndex 收敛到有效范围，避免 banner 突然消失
+  // B2 修复：lives 数量变化（60s 轮询）后 bannerIndex 收敛到有效范围（dots 点击/轮播前进以渲染期安全值为主）
   useEffect(() => {
     if (bannerCount > 0) {
       setBannerIndex((i) => Math.min(i, bannerCount - 1));
@@ -515,7 +557,7 @@ export default function HomeScreen() {
   const quick = QUICK.map((i) => ({ ...i, title: t(i.title) }));
   const toolChips = TOOL_CHIPS.map((i) => ({ ...i, title: t(i.title) }));
 
-  const banner = lives[bannerIndex];
+  const banner = lives[safeBannerIndex];
   const trackTitle = currentTrack?.title || '';
   const trackArtist = currentTrack?.artist || currentTrack?.joinMemberNames || '';
   // F3 修复：续播卡随播放状态显示「播放中/加载中/继续播放」，R2 曲目 URL 异步解析时用户有反馈
@@ -613,7 +655,7 @@ export default function HomeScreen() {
                       {lives.slice(0, bannerCount).map((live, i) => (
                         <AnimatedDots
                           key={live.liveId}
-                          active={i === bannerIndex}
+                          active={i === safeBannerIndex}
                           color={palette.tint}
                           idle={palette.fill3}
                           onPress={() => setBannerIndex(i)}

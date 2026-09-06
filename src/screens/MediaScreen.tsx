@@ -978,6 +978,11 @@ export default function MediaScreen() {
         }
       }
       const res = await pocketApi.getLiveList({ next: finalCursor, record: mode === 'vod', debug: true, userId });
+      // 空壳防护：官方接口偶发 success/200 但缺 liveList 字段（限流/风控/异常）→
+      // normalizeLiveList 会解出空数组，把"有直播/录播"误覆盖成"暂无数据"（用户可感知的概率性空态）。
+      // 结构里确实没有 liveList 数组视为请求异常（抛错走 catch 保留旧列表）；仅真为 [] 才落空。
+      const shellList = (res?.content ?? res?.data ?? res)?.liveList;
+      if (!Array.isArray(shellList)) throw new Error('live list empty shell');
       const next = normalizeLiveList(res);
       const nextToken = Number((res as any)?.content?.next ?? (res as any)?.data?.next ?? (res as any)?.next ?? 0) || 0;
       setNextCursor(nextToken);
@@ -988,7 +993,9 @@ export default function MediaScreen() {
       if (mode === 'live') setLiveList((prev) => (append ? mergeUniqueLiveItems(prev, next) : next));
       else setVodList((prev) => (append ? mergeUniqueLiveItems(prev, next) : next));
     } catch (err) {
-      setError(errorMessage(err));
+      // 静默轮询失败（60s 自动刷新）不弹错误条：保留旧列表继续展示，下一轮自愈；
+      // 仅首屏/下拉/切 tab（silent=false）失败才提示（列表为空时不会误显示"暂无数据"）。
+      if (!silent) setError(errorMessage(err));
       setHasMore(false);
     } finally {
       loadingRef.current = false;
@@ -1949,8 +1956,8 @@ export default function MediaScreen() {
               </View>
             ) : (
               <EmptyState
-                icon="file-cancel-outline"
-                title={search.trim() ? t('没有匹配的直播/录播') : t('暂无数据')}
+                icon={error ? 'cloud-alert-outline' : 'file-cancel-outline'}
+                title={search.trim() ? t('没有匹配的直播/录播') : error ? t('加载失败，请下拉重试') : t('暂无数据')}
               />
             )
           }

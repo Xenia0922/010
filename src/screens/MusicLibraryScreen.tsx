@@ -320,9 +320,9 @@ export default function MusicLibraryScreen() {
   const armedUrlRef = useRef('');
   /** 最近一次收到原生 progress 的时间戳（判断原生活跃度，失联 >8s 允许重推） */
   const lastProgressTsRef = useRef(0);
-  /** cmd(next/prev) 去抖：双监听器都转发切歌命令，300ms 内只认一次 */
-  const cmdLastTsRef = useRef(0);
-  // ⚠️ 暂停/恢复滞回同步已上移到 App 全局（页面无关）；本页 progress 只做「确认下发 + 降级」
+  // ⚠️ 系统卡 暂停/恢复/上一首/下一首/播完切歌 统一由 App 全局 MusicForegroundBridge 常驻处理
+  // （页面无关；页面只做「下发 + 确认 + 降级」，不再私有处理 cmd/ended/pause-mirror——
+  // 旧实现页面挂载时与 App 全局双监听，行为随导航状态漂移：音乐页在/不在，系统控件手感不一致）。
 
   useEffect(() => subscribeExo((type, p: any) => {
     try {
@@ -338,20 +338,6 @@ export default function MusicLibraryScreen() {
         }
         if (playingN) cancelArmTimer(); // Exo 已在原生出声 → 候选确认
         // 播放态回写（系统卡暂停/恢复→App 图标）由 App 全局滞回处理，本页不重复
-      } else if (type === 'ended') {
-        // 播完（单曲队列）→ 引擎切下一首（顺序/随机在 JS；单曲循环走 REPEAT_MODE_ONE 不触发 ended）。
-        // 引擎级节流防与 App 全局 ended 双发连切两首
-        if (useMusicPlayerStore.getState().playbackState === 'playing') MusicEngine.next();
-      } else if (type === 'cmd') {
-        // 系统卡/线控 上一首/下一首（App 全局也处理；本地去抖 + 引擎节流防双发）
-        const c = String(p?.cmd || '');
-        if (c === 'next' || c === 'prev') {
-          const now = Date.now();
-          if (cmdLastTsRef.current && now - cmdLastTsRef.current < 300) return;
-          cmdLastTsRef.current = now;
-          if (c === 'next') MusicEngine.next();
-          else MusicEngine.prev();
-        }
       } else if (type === 'error') {
         // 原生播放失败 → 本次会话降级 RNV（Video volume/paused 由 nativeOk=false 自动接管）
         if (!nativeDisabledRef.current) {
@@ -444,12 +430,8 @@ export default function MusicLibraryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playUrl, currentIndex, playbackState, playMode, playVolume]);
 
-  // 播放/暂停同步 Exo（原生路径；Video 路径由 store 自身状态驱动）
-  useEffect(() => {
-    if (!nativeOkRef.current) return;
-    if (playbackState === 'paused') exoControl('pause');
-    else if (playbackState === 'playing') exoControl('resume');
-  }, [playbackState]);
+  // 播放/暂停同步 Exo → 已由 App 全局 MusicForegroundBridge 常驻镜像处理（页面无关：
+  // 页面挂载/卸载都应一致，避免"返回主页后系统控件才生效"的导航依赖手感）。
 
   // 播放模式（单曲循环）→ 原生 REPEAT_MODE_ONE（其余模式 Exo 播完发 ended 由 JS 引擎切歌）
   useEffect(() => {
