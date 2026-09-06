@@ -161,13 +161,13 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
       setQueue: (tracks) => set({ queue: tracks, currentIndex: tracks.length > 0 ? 0 : -1 }),
 
       addToQueue: (track) => set((s) => {
-        if (s.queue.find((t) => (t.musicId || t.id) === (track.musicId || track.id))) return s;
+        if (s.queue.find((t) => String(t.musicId || t.id) === String(track.musicId || track.id))) return s;
         return { queue: [...s.queue, track] };
       }),
 
       removeFromQueue: (id) => set((s) => {
-        const removedIdx = s.queue.findIndex((t) => (t.musicId || t.id) === id);
-        const newQueue = s.queue.filter((t) => (t.musicId || t.id) !== id);
+        const removedIdx = s.queue.findIndex((t) => String(t.musicId || t.id) === String(id));
+        const newQueue = s.queue.filter((t) => String(t.musicId || t.id) !== String(id));
         let newIdx = s.currentIndex;
         if (removedIdx >= 0 && removedIdx < s.currentIndex) newIdx = s.currentIndex - 1;
         else if (removedIdx === s.currentIndex) newIdx = newQueue.length > 0 ? Math.min(s.currentIndex, newQueue.length - 1) : -1;
@@ -188,7 +188,7 @@ export const useMusicPlayerStore = create<MusicPlayerState>()(
        */
       play: (track, queue, keepPosition = false) => set((s) => {
         const q = queue || s.queue;
-        const idx = q.findIndex((t) => (t.musicId || t.id) === (track.musicId || track.id));
+        const idx = q.findIndex((t) => String(t.musicId || t.id) === String(track.musicId || track.id));
         const resumePos = keepPosition && idx === s.currentIndex && s.position > 0 ? s.position : 0;
         return {
           queue: q,

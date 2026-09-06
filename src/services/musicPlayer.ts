@@ -22,6 +22,28 @@ async function readLyricCache(): Promise<Record<string, { t: number; text: strin
   }
 }
 
+// 歌词缓存写盘串行化：并发拉取（快切歌/后台预取）若各自 read-modify-write 整表重写，
+// 后写者基于旧表覆盖会丢条目。所有写入走单链排队、每次读最新表；命中缓存不触发写盘。
+let _lyricWriteChain: Promise<void> = Promise.resolve();
+function saveLyricCache(cacheKey: string, text: string): void {
+  _lyricWriteChain = _lyricWriteChain.then(async () => {
+    try {
+      const cache = await readLyricCache();
+      cache[cacheKey] = { t: Date.now(), text };
+      const keys = Object.keys(cache);
+      if (keys.length > 200) {
+        const oldest = keys
+          .map((k) => ({ k, t: cache[k].t }))
+          .sort((a, b) => a.t - b.t)
+          .slice(0, keys.length - 200)
+          .map((x) => x.k);
+        oldest.forEach((k) => delete cache[k]);
+      }
+      await AsyncStorage.setItem(LYRICS_CACHE_KEY, JSON.stringify(cache));
+    } catch { /* 写失败静默：本次未入缓存，下次重拉 */ }
+  });
+}
+
 /** 48 官方域名白名单 —— 纯函数、无副作用、可安全静态导入 */
 export function isPlayableHost(url: string): boolean {
   try {
@@ -66,6 +88,8 @@ export const MusicEngine = {
   // Map 保插入序，超上限丢最旧 —— 长会话/大歌单防无限增长（URL 是长串，几百首≈数百 KB）
   _warmUrls: new Map<string, string>(),
   _warmUrlsMax: 40,
+  // 连续自动跳过深度：整队 URL 失效时 playTrack catch 自动 next() 逐首扫，计数封顶防失败级联无限连跳
+  _autoSkipDepth: 0,
   // 切歌节流：Exo 事件（ended/cmd next/prev）有 App 全局 + 页面双监听器时防连切两首
   _skipTs: 0,
 
@@ -223,10 +247,11 @@ export const MusicEngine = {
       error: null,
     });
     this._initDefaultResolver();
+    const seq = this._playSeq; // 预解析期间若用户发起播放/切歌（_playSeq++），丢弃过期回写
     this._waitForResolver().then(resolver => {
       if (resolver) {
         resolver(track).then(resolved => {
-          if (resolved) useMusicPlayerStore.setState({ url: resolved });
+          if (resolved && seq === this._playSeq) useMusicPlayerStore.setState({ url: resolved });
         }).catch(() => {});
       }
     });
@@ -261,15 +286,24 @@ export const MusicEngine = {
       if (!/^https?:\/\//i.test(url)) throw new Error('非法播放地址');
       store.setUrl(url);
       store.setPlaybackState('playing');
+      this._autoSkipDepth = 0; // 播放成功：复位自动跳过计数（下次失败可再启一轮封顶扫描）
       // 后台预解析 + Range 预热下一首：切歌/下一首起播不再等 AWS 冷连接
       this._prewarmNextTrack();
     } catch (e: any) {
       if (seq !== this._playSeq) return;
       store.setError(e?.message || 'play failed');
       // 无效的歌曲自动跳到下一首；但 single 模式/仅一首时 next() 会绕回同曲
-      // （nextIndex 返回 current），造成无限重试，必须停在 error 态由用户手动处理
+      // （nextIndex 返回 current），造成无限重试，必须停在 error 态由用户手动处理。
+      // _autoSkipDepth 封顶（≤队列长度）：整队 URL 全失效时最多完整扫一遍即停，防失败级联无限连跳。
       const st = useMusicPlayerStore.getState();
-      if (st.queue.length > 1 && st.playMode !== 'single') this.next();
+      if (st.queue.length > 1 && st.playMode !== 'single') {
+        if (this._autoSkipDepth < st.queue.length) {
+          this._autoSkipDepth += 1;
+          try { await this.next(); } catch {}
+        } else {
+          this._autoSkipDepth = 0; // 本队列已扫完一轮仍全失效：复位待命，避免自动跳过永久锁死
+        }
+      }
     }
   },
 
@@ -376,18 +410,29 @@ export const MusicEngine = {
       const t = s.queue[s.currentIndex];
       this._initDefaultResolver();
       this._waitForResolver().then(async (resolver) => {
-        if (!resolver) { s.setError('解析器未就绪'); return; }
+        if (!resolver) { useMusicPlayerStore.getState().setError('解析器未就绪'); return; }
         try {
           const url = await resolver(t);
           if (!url || !isPlayableHost(url) || !/^https?:\/\//i.test(url)) {
             console.warn('[MusicEngine] resume url invalid');
             return;
           }
-          s.setUrl(url);
-          s.setPlaybackState('playing');
-          if (!s.lyrics || s.lyrics.length === 0) this._fetchLyrics(t);
+          // 异步解析期间可能已切歌 / 已被并发路径（playTrack/loadQueueAt 预解析）写回 url：
+          // 一律用最新 state 判断（不用闭包旧快照 s —— 跨 await 用过期值的 TOCTOU），
+          // 只有仍是同一曲才允许写回，避免把旧曲地址盖到新曲上。
+          const cur = useMusicPlayerStore.getState();
+          if (cur.url && /^https?:\/\//i.test(cur.url) && isPlayableHost(cur.url)) {
+            if (cur.playbackState !== 'playing') cur.setPlaybackState('playing'); // 有地址即起播
+            return;
+          }
+          const curTrack = cur.queue[cur.currentIndex];
+          const sameTrack = curTrack && String(curTrack.musicId || curTrack.id) === String(t.musicId || t.id);
+          if (!sameTrack) return; // 期间已切歌：丢弃过期解析结果
+          cur.setUrl(url);
+          cur.setPlaybackState('playing');
+          if (!cur.lyrics || cur.lyrics.length === 0) this._fetchLyrics(t);
         } catch (e: any) {
-          s.setError(e?.message || '播放恢复失败');
+          useMusicPlayerStore.getState().setError(e?.message || '播放恢复失败');
         }
       });
       return;
@@ -414,6 +459,13 @@ export const MusicEngine = {
 
   // --- Lyrics ---
   async _fetchLyrics(track: Track) {
+    // 竞态防护：抓当前播放序号；歌词解析/网络多跳期间若用户切了歌（_playSeq 变化），
+    // 旧歌歌词不得写回（此前快切歌可能把上一首歌词落到新歌上）
+    const seq = this._playSeq;
+    const commit = (lines: any[]) => {
+      if (seq !== this._playSeq) return;
+      useMusicPlayerStore.getState().setLyrics(lines);
+    };
     const title = String(track.title || '').trim();
     if (!title) return;
     // 优先用真实团体/艺人名（groupLabel/artist），成员名（joinMemberNames）次之；
@@ -447,12 +499,12 @@ export const MusicEngine = {
             const cache = await readLyricCache();
             const hit = cache[cacheKey];
             if (hit && Date.now() - hit.t < LYRICS_CACHE_TTL) {
-              useMusicPlayerStore.getState().setLyrics(parseLrc(hit.text));
+              commit(parseLrc(hit.text));
               return;
             }
             const lrcResp = await fetchWithTimeout(url, {}, 10000);
             const raw = await lrcResp.text();
-            useMusicPlayerStore.getState().setLyrics(parseLrc(raw));
+            commit(parseLrc(raw));
             cache[cacheKey] = { t: Date.now(), text: raw };
             const keys = Object.keys(cache);
             if (keys.length > 200) {
@@ -484,24 +536,14 @@ export const MusicEngine = {
         const cache = await readLyricCache();
         const hit = cache[cacheKey];
         if (hit && Date.now() - hit.t < LYRICS_CACHE_TTL) {
-          useMusicPlayerStore.getState().setLyrics(parseLrc(hit.text));
+          commit(parseLrc(hit.text));
           return;
         }
         const lrcResp = await fetchWithTimeout(url, {}, 10000);
+        if (!lrcResp.ok) { console.warn('[lyrics] fetch', lrcResp.status, title); return; } // 404/错误页不落缓存
         const raw = await lrcResp.text();
-        useMusicPlayerStore.getState().setLyrics(parseLrc(raw));
-        // 落盘（整表重写有界：最多保留 200 首，超出丢最旧）
-        cache[cacheKey] = { t: Date.now(), text: raw };
-        const keys = Object.keys(cache);
-        if (keys.length > 200) {
-          const oldest = keys
-            .map((k) => ({ k, t: cache[k].t }))
-            .sort((a, b) => a.t - b.t)
-            .slice(0, keys.length - 200)
-            .map((x) => x.k);
-          oldest.forEach((k) => delete cache[k]);
-        }
-        AsyncStorage.setItem(LYRICS_CACHE_KEY, JSON.stringify(cache)).catch(() => {});
+        commit(parseLrc(raw));
+        saveLyricCache(cacheKey, raw);
       } else {
         console.warn('[lyrics] no match for', title, 'group=', rawGroup);
       }
