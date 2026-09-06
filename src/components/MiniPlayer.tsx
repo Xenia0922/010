@@ -152,6 +152,20 @@ export function MiniPlayer() {
     return () => sub.remove();
   }, [visible, playing, info]);
 
+  // 系统 PiP ⏯ 点击（PipToggleBridge 经 store 发信号）→ 与小窗暂停键同逻辑切换当前小窗内容
+  const sysToggleSeq = useMiniPlayerStore((s) => s.sysToggleSeq);
+  useEffect(() => {
+    if (sysToggleSeq === 0) return;
+    const cur = useMiniPlayerStore.getState();
+    if (!cur.visible || !cur.info?.url) return; // 小窗未接管：交统一播放器分支处理
+    const next = !cur.playing;
+    cur.setPlaying(next);
+    if (useWebMini) {
+      try { webMiniRef.current?.postMessage(JSON.stringify({ type: next ? 'play' : 'pause' })); } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sysToggleSeq]);
+
   // ⚠️ 所有 hooks 必须在下方 `if (!visible || !info) return null` 之前：
   // return 若夹在 hooks 中间，每次小窗开/关(visible 翻转) hooks 数量变化 → "Rendered more hooks" 崩溃
   const lowerUrl = String(info?.url || '').toLowerCase();
@@ -327,7 +341,7 @@ export function MiniPlayer() {
       {/* 按钮层：返回全屏/关闭/缩小/暂停 全部随控件显隐（3s 自动隐藏，点画面唤出） */}
       <Animated.View
         pointerEvents="box-none"
-        style={[StyleSheet.absoluteFill, { left: pos.x, top: pos.y, width: boxW, height: boxHNow, zIndex: 1000 }]}
+        style={[StyleSheet.absoluteFill, { left: pos.x, top: pos.y, width: boxW, height: boxHNow, zIndex: 1002, elevation: 24 }]}
       >
         {controlsVisible ? (
           <>
@@ -383,15 +397,16 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 999,
   },
-  // 透明拖动层：elevation 提升使其盖过 Android Video 的 SurfaceView，触摸才能到 PanResponder
+  // 透明拖动层：高 elevation 使其盖过 Android WebView/Video 的硬件渲染层（它们可能无视
+  // zIndex 按 elevation 排 Z 序），触摸才能稳定到 PanResponder（网页小窗拖动/点画面唤控件修复）
   dragLayer: {
     position: 'absolute',
     left: 0,
     top: 0,
     right: 0,
     bottom: 0,
-    elevation: 6,
-    zIndex: 5,
+    elevation: 16,
+    zIndex: 6,
     backgroundColor: 'transparent',
   },
   titleBar: {

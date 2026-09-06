@@ -17,6 +17,7 @@ interface Props {
 export interface WebKernelHandle {
   seek: (t: number) => void;
   setRate: (r: number) => void;
+  setPaused: (p: boolean) => void;
 }
 
 /**
@@ -36,6 +37,9 @@ export const WebKernel = forwardRef<WebKernelHandle, Props>(function WebKernel(
     },
     setRate: (r: number) => {
       webRef.current?.postMessage(JSON.stringify({ type: 'rate', rate: r }));
+    },
+    setPaused: (p: boolean) => {
+      webRef.current?.postMessage(JSON.stringify({ type: p ? 'pause' : 'play' }));
     },
   }));
 

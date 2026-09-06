@@ -1,4 +1,4 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules, Platform, DeviceEventEmitter } from 'react-native';
 
 /** 画中画（悬浮窗）控制器桥：NativeModules.PipController（Android 原生模块） */
 const Pip = (NativeModules as any)?.PipController;
@@ -17,6 +17,21 @@ export function enterPipMode() {
   try {
     Pip.enterPip();
   } catch { /* ignore */ }
+}
+
+/**
+ * 订阅系统 PiP 窗口 ⏯ 按钮点击（原生 RemoteAction → 广播 → 本事件）。
+ * 回调里应切换"当前正在小窗里播的媒体"（应用内小窗 → 统一播放器）的播放/暂停。
+ * 返回退订函数。
+ */
+export function listenPipToggle(cb: (payload: { playing?: boolean }) => void): () => void {
+  if (Platform.OS !== 'android') return () => {};
+  const sub = DeviceEventEmitter.addListener('PipToggleCmd', (e: any) => {
+    try {
+      cb(e && typeof e === 'object' ? e : {});
+    } catch {}
+  });
+  return () => sub.remove();
 }
 
 /** 更新 PiP 窗口比例（跟随视频内容 naturalSize，竖屏视频悬浮窗也是竖的） */

@@ -27,10 +27,16 @@ interface MiniPlayerState {
   playing: boolean;
   /** 小窗实时播放位置（秒）：点小窗回大窗时据此续播（大小窗切换不丢进度） */
   currentPos: number;
+  /**
+   * 系统 PiP ⏯ 点击触发序号：外部（PipToggleBridge）无法直接碰 MiniPlayer 的 WebView ref，
+   * 只能经 store 发信号，MiniPlayer 组件监听序号变化后执行与点小窗暂停键相同的切换逻辑。
+   */
+  sysToggleSeq: number;
   open: (info: MiniPlayerInfo) => void;
   close: () => void;
   setPlaying: (p: boolean) => void;
   setCurrentPos: (p: number) => void;
+  requestSysToggle: () => void;
 }
 
 export const useMiniPlayerStore = create<MiniPlayerState>((set) => ({
@@ -38,8 +44,10 @@ export const useMiniPlayerStore = create<MiniPlayerState>((set) => ({
   visible: false,
   playing: true,
   currentPos: 0,
+  sysToggleSeq: 0,
   open: (info) => set({ info, visible: true, playing: true, currentPos: 0 }),
   close: () => set({ visible: false, info: null, currentPos: 0 }),
   setPlaying: (playing) => set({ playing }),
   setCurrentPos: (currentPos) => set({ currentPos }),
+  requestSysToggle: () => set((s) => ({ sysToggleSeq: s.sysToggleSeq + 1 })),
 }));

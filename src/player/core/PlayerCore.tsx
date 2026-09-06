@@ -77,6 +77,29 @@ export function PlayerCore({ onVideoSize, resumeAt: externalResumeAt }: { onVide
     }
   }, [rate, useWebKernel]);
 
+  // 播放/暂停驱动：native/exo 经 paused prop 由 store.state 直达；web 内核的 <video> 不在 RN
+  // 控制下（html autoplay 起播），必须显式 postMessage 才能暂停/续播——
+  // 修复：网页直播/录播按控制条或系统 PiP ⏯ 暂停时画面继续播/声音不停（控件"失灵"）。
+  const kernelForState = useWebKernel ? 'web' : activeKernel;
+  const webPauseRef = useRef<boolean | null>(null);
+  // 内核切换 / 源变化 → html 整页重载（autoplay 起播），旧暂停指令作废：复位去重哨兵
+  useEffect(() => {
+    webPauseRef.current = null;
+  }, [kernelForState, source?.url]);
+  useEffect(() => {
+    if (kernelForState !== 'web' || !source?.url || !webRef.current) return;
+    if (state !== 'playing' && state !== 'paused') return;
+    const wantPaused = state === 'paused';
+    if (webPauseRef.current === wantPaused) return;
+    webPauseRef.current = wantPaused;
+    try {
+      webRef.current.setPaused(wantPaused);
+    } catch (err) {
+      console.warn('[PlayerCore] web pause err', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, kernelForState, source?.url]);
+
   const handleLoad = useCallback(
     (duration: number, naturalSize?: { width: number; height: number }) => {
       setDuration(duration);

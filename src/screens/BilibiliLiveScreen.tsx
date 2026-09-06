@@ -14,7 +14,6 @@ import {
   View,
 } from 'react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { setPipPlaying } from '../utils/pip';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { useSettingsStore } from '../store';
 import { useMiniPlayerStore } from '../store/miniPlayerStore';
@@ -166,13 +165,6 @@ export default function BilibiliLiveScreen() {
     }
   }, [currentCandidate]);
   const qualityLabel = qualities.find((q) => q.qn === qualityQn)?.label || '';
-
-  // 画中画（悬浮窗）状态同步：直播流解析成功且未暂停、非网页播放器时置位
-  useEffect(() => {
-    // 应用内小窗已接管 PiP 标志时不覆盖（防小窗切后台不进悬浮窗）
-    if (useMiniPlayerStore.getState().visible) return;
-    setPipPlaying(!!streamUrl && !paused && !useWebPlayer);
-  }, [streamUrl, paused, useWebPlayer]);
 
   useEffect(() => {
     const parent = navigation.getParent?.();

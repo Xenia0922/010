@@ -10,6 +10,9 @@ import { ensureMemberData } from '../services/memberData';
 import { RootStackParamList, TabParamList } from './types';
 import { AppTabBar, MCI } from '../components/AppTabBar';
 import { MiniPlayer } from '../components/MiniPlayer';
+import { useMiniPlayerStore } from '../store/miniPlayerStore';
+import { usePlayerStore } from '../player/store/playerStore';
+import { listenPipToggle } from '../utils/pip';
 import { usePalette } from '../theme';
 import HomeScreen from '../screens/HomeScreen';
 import MessagesScreen from '../screens/MessagesScreen';
@@ -221,6 +224,31 @@ const AppDarkTheme = {
   },
 };
 
+/**
+ * 系统 PiP（小窗）⏯ 点击 → 切换"当前正在小窗里播的媒体"的播放/暂停。
+ * 优先级：应用内小窗接管中 → 切小窗；否则统一播放器 source 在播 → 切它（store.state
+ * 变化驱动 native/exo paused prop 与 web postMessage，PlayerCore 已接 web 指令）。
+ * 全局只挂一次（导航根），PiP 期间 JS 存活即可达。
+ */
+function PipToggleBridge() {
+  useEffect(() => {
+    return listenPipToggle(() => {
+      try {
+        const mini = useMiniPlayerStore.getState();
+        if (mini.visible && mini.info?.url) {
+          useMiniPlayerStore.getState().requestSysToggle();
+          return;
+        }
+        const ps = usePlayerStore.getState();
+        if (ps.source?.url && (ps.state === 'playing' || ps.state === 'paused')) {
+          ps.setState(ps.state === 'playing' ? 'paused' : 'playing');
+        }
+      } catch {}
+    });
+  }, []);
+  return null;
+}
+
 export default function AppNavigator() {
   const theme = useResolvedTheme();
   const palette = usePalette();
@@ -299,6 +327,8 @@ export default function AppNavigator() {
         <AppToast />
         {/* 应用内悬浮小窗播放器（全局挂载，导航上下文内可用） */}
         <MiniPlayer />
+        {/* 系统 PiP ⏯ → 当前媒体切换（全局单次监听） */}
+        <PipToggleBridge />
       </>
       </NavigationContainer>
     </>

@@ -26,10 +26,17 @@ export function FullscreenManager() {
     return () => setLiveImmersiveMode(false);
   }, [fullscreen]);
 
-  // PiP 标志：播放中且未全屏（App 切后台自动进系统悬浮窗）
+  // PiP 标志：播放中且未全屏（App 切后台自动进系统悬浮窗）。
+  // 统一写点：所有视频（原生/Exo/网页内核）的 PiP 身份都从这里下发；
+  // 页面的私有播放器/小窗各自经 setPipPlaying 覆写此标志（播放确立时由 PlayerCore 事件驱动）。
   useEffect(() => {
-    setPipPlaying(!!source?.url && state === 'playing' && !fullscreen);
+    const on = !!source?.url && state === 'playing' && !fullscreen;
+    setPipPlaying(on);
+    // 视频（非音乐）成为前台媒体时，若音乐服务只是"暂停残留"，可留待原生 PiP 入口统一清理
   }, [source, state, fullscreen]);
+
+  // 卸载（播放器关闭）兜底复位：防"最后置位 true 后页面已关，再按 Home 误进无内容悬浮窗"
+  useEffect(() => () => setPipPlaying(false), []);
 
   // 返回键：先退全屏，再关闭播放器（R4：优先调页面 onClose 清理播放器页状态，
   // 避免 VideoLibrary/Bilibili 等"黑屏需按两次返回"）
