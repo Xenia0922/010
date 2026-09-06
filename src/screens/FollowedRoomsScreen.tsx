@@ -1909,6 +1909,28 @@ export default function FollowedRoomsScreen() {
     });
   }, [followed, searchQuery, pinned]);
 
+  // 分区渲染：置顶 (N) / 成员 (N) — 平铺数组用 __header 标记，renderItem 分派
+  const partitionedData = useMemo(() => {
+    const out: Array<any> = [];
+    const pinnedSet = new Set(pinned);
+    const pinnedItems = filtered.filter((it) => pinnedSet.has(it.memberId));
+    const otherItems = filtered.filter((it) => !pinnedSet.has(it.memberId));
+    if (pinnedItems.length > 0) {
+      out.push({ __header: true, key: 'h-pin', section: 'pinned', count: pinnedItems.length });
+      out.push(...pinnedItems);
+    }
+    if (otherItems.length > 0) {
+      out.push({ __header: true, key: 'h-oth', section: 'others', count: otherItems.length });
+      out.push(...otherItems);
+    }
+    return out;
+  }, [filtered, pinned]);
+
+  // 置顶区内长按拖动排序：RNGH Pan 长按 400ms 激活 + 跟手 translateY + 松手按 dy 落位
+  // （拖动实现未启用；当前仅长按弹 Alert, 用户后续要求时再补 drag）
+  // const [dragId, setDragId] = useState<string | null>(null);
+  // const [dragY, setDragY] = useState(0);
+
   // 搜索时从全量成员库匹配（未关注的成员可直接在此关注）
   const memberHits = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -2586,10 +2608,19 @@ export default function FollowedRoomsScreen() {
         ) : (
         <PerfFlatList
           key="rooms-list"
-          data={filtered}
-          keyExtractor={(item) => String(item.memberId)}
+          data={partitionedData}
+          keyExtractor={(item: any, index) => String(item.__header ? `h-${item.section}` : item.memberId)}
           contentContainerStyle={styles.listContent}
           renderItem={({ item, index }) => {
+            // 分区 header（小节标题）
+            if (item.__header) {
+              const sec = item.section === 'pinned' ? t('置顶 ({n})', { n: item.count }) : t('成员 ({n})', { n: item.count });
+              return (
+                <View style={styles.sectionHeaderWrap}>
+                  <Text style={[styles.sectionHeaderText, { color: palette.labelSecondary }]}>{sec}</Text>
+                </View>
+              );
+            }
             const fid = String(item.member?.id || item.memberId);
             const isFollowing = followedIds.has(fid);
             const busy = followBusy.has(fid);
@@ -2927,6 +2958,8 @@ const styles = StyleSheet.create({
   listContent: { paddingBottom: 112, paddingTop: 4 },
   /** 房间行卡：封面 56 圆角 12 + 房间名 + 状态点 + 直播中徽标 */
   roomRow: { paddingHorizontal: 16, marginBottom: 8 },
+  sectionHeaderWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
+  sectionHeaderText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
   roomRowCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2938,6 +2971,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    // 内容垂直居中：行少成员(无小房间/无 team)不再堆顶部, 视觉上跟行多成员一样
     padding: 12,
   },
   roomCover: {
