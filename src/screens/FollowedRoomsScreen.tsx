@@ -2646,51 +2646,37 @@ export default function FollowedRoomsScreen() {
                         </View>
                       ) : null}
                     </View>
-                    {team ? (
-                      <Text style={[styles.roomTeam, { color: palette.labelTertiary }]} numberOfLines={1}>{team}</Text>
-                    ) : null}
-                    {/* 最新消息：大/小房间分开显示（小房间有消息时第二条） */}
-                    {lastText ? (
-                      <View style={styles.lastRow}>
-                        <View style={[styles.lastTag, { backgroundColor: palette.tintSoft }]}>
-                          <Text style={[styles.lastTagText, { color: palette.tint }]}>{t('大')}</Text>
-                        </View>
-                        <Text style={[styles.roomLast, { color: palette.labelSecondary, marginTop: 0, flex: 1 }]} numberOfLines={1}>
-                          {lastText}
-                        </Text>
-                      </View>
-                    ) : (
-                      <Text style={[styles.roomLast, { color: palette.labelSecondary }]} numberOfLines={1}>
-                        {t('点击查看房间消息')}
-                      </Text>
-                    )}
+                    {/* 信息区恒定两行(名字行+预览行)保证卡片等高：团队并入预览前缀、时间放行尾 */}
                     {(() => {
                       const sMsg = item.lastSmallMessage;
-                      if (!sMsg) return null;
-                      const sText = messageText(sMsg);
-                      if (!sText || sText === lastText) return null;
+                      const sText = sMsg ? messageText(sMsg) : '';
                       const sTime = Number(sMsg?.msgTime || sMsg?.ctime || 0);
+                      const bigText = lastText;
+                      const useSmall = sText && sText !== bigText && sTime > lastTime;
+                      const showText = (useSmall || !bigText) && sText ? sText : bigText;
+                      const tag = useSmall || !bigText ? '小' : '大';
+                      const tagOnTint = (useSmall || !bigText);
                       return (
                         <View style={styles.lastRow}>
-                          <View style={[styles.lastTag, { backgroundColor: palette.fill2 }]}>
-                            <Text style={[styles.lastTagText, { color: palette.labelSecondary }]}>{t('小')}</Text>
-                          </View>
-                          <Text style={[styles.roomLastSmall, { color: palette.labelTertiary }]} numberOfLines={1}>
-                            {sText}
+                          {showText ? (
+                            <View style={[styles.lastTag, { backgroundColor: tagOnTint ? palette.fill2 : palette.tintSoft }]}>
+                              <Text style={[styles.lastTagText, { color: tagOnTint ? palette.labelSecondary : palette.tint }]}>{tag}</Text>
+                            </View>
+                          ) : null}
+                          <Text style={[styles.roomLast, { color: palette.labelSecondary, marginTop: 0, flex: 1 }]} numberOfLines={1}>
+                            {team ? (
+                              <Text style={[styles.roomTeamInline, { color: palette.labelTertiary }]}>{team} · </Text>
+                            ) : null}
+                            {showText || t('点击查看房间消息')}
                           </Text>
-                          {sTime ? (
+                          {lastTime && showText ? (
                             <Text style={[styles.lastTimeSmall, { color: palette.labelTertiary }]} numberOfLines={1}>
-                              {formatTimestamp(sTime).slice(5, 16)}
+                              {formatTimestamp(lastTime).slice(5, 16)}
                             </Text>
                           ) : null}
                         </View>
                       );
                     })()}
-                    <View style={styles.roomFoot}>
-                      <Text style={[styles.roomTime, { color: palette.labelTertiary }]} numberOfLines={1}>
-                        {lastTime ? formatTimestamp(lastTime).slice(5, 16) : ''}
-                      </Text>
-                    </View>
                   </View>
                 </ScalePressable>
                 <View style={styles.roomActions}>
@@ -2983,6 +2969,7 @@ const styles = StyleSheet.create({
   },
   liveBadgeChipText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
   roomTeam: { fontSize: 11, marginTop: 3, fontWeight: '600' },
+  roomTeamInline: { fontSize: 11, fontWeight: '600' },
   roomLast: { fontSize: 12, marginTop: 4, lineHeight: 16 },
   lastRow: {
     flexDirection: 'row',
