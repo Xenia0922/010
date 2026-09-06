@@ -1802,6 +1802,12 @@ export default function MediaScreen() {
           keyExtractor={(item: any, index) => String(item?.liveId || item?.key || index)}
           numColumns={tab === 'vod' ? 1 : 2}
           columnWrapperStyle={tab === 'vod' ? null : styles.vodGridRow}
+          // ① extraData 跟窗口宽度：PiP 进出 → winW 变化触发整个列表重渲，
+          //   vodGridCover aspectRatio:1(高=宽) 重新测量,卡高恢复。
+          // ② 关 removeClippedSubviews:grid 仅几行,无虚拟化必要;
+          //   开则 Android 上 PiP/尺寸变化后子视图高度常被错误裁剪到 ≈0。
+          extraData={screen.width}
+          removeClippedSubviews={false}
           renderItem={({ item, index }) => {
             // 录播：组头 / 双卡行
             if (tab === 'vod') {
