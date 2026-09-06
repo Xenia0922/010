@@ -223,7 +223,7 @@ public class RadioForegroundService extends Service {
         } else {
           if (wakeLock.isHeld()) wakeLock.release();
         }
-      } catch (SecurityException | RuntimeException ignored) {
+      } catch (RuntimeException ignored) { // SecurityException 是其子类，无需单独列出
       }
     }
     return START_NOT_STICKY;
