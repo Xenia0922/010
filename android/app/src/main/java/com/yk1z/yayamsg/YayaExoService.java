@@ -59,6 +59,10 @@ public class YayaExoService extends Service {
   /** 下一首/上一首单跳提示：JS 播放确立时推送，service 手动 skip 时优先本地切换
    * （后台 JS 被 ColorOS 冻结 timer/网络时，cmd=next 事件到 JS 后异步链路永不完成 → 切歌无效） */
   public static final String ACTION_SET_HINTS = "yaya.exo.set_hints";
+  /** 服务进程存活标记：MainActivity 在视频进 PiP 前据它决定是否给音乐服务发 stop（释放会话防劫持系统控件） */
+  public static volatile boolean serviceAlive = false;
+  /** 音乐是否"真的在出声"（playWhenReady 且 Exo 就绪）：非实播态（暂停/未起播）才允许被视频 PiP 停止 */
+  public static volatile boolean musicActuallyPlaying = false;
   private static final String CHANNEL_ID = "yaya_radio_v3";
   private static final int NOTIFICATION_ID = 2024;
   private static final Handler h = new Handler(Looper.getMainLooper());
@@ -122,7 +126,10 @@ public class YayaExoService extends Service {
       pushState();
     }
     @Override public void onMediaItemTransition(@Nullable MediaItem m, int reason) { emitProgress(); pushState(); }
-    @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) { emitProgress(); pushState(); }
+    @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+      musicActuallyPlaying = playWhenReady && exo != null && exo.getPlaybackState() != Player.STATE_ENDED;
+      emitProgress(); pushState();
+    }
     @Override public void onPlayerError(PlaybackException error) {
       Map<String, Object> extra = new HashMap<>();
       extra.put("message", String.valueOf(error.getMessage()));
@@ -160,6 +167,7 @@ public class YayaExoService extends Service {
   @Override
   public void onCreate() {
     super.onCreate();
+    serviceAlive = true;
     ensureChannel();
   }
 
@@ -335,6 +343,18 @@ public class YayaExoService extends Service {
       return START_NOT_STICKY;
     } else {
       String cmd = intent.getStringExtra("cmd");
+      if ("stop".equals(cmd)) {
+        // 视频进 PiP / 页面明确要求停音乐：即使 exo 尚未起播也必须收尾（空服务发 stop
+        // 若走 minimalFg 分支会凭空挂一个前台占位通知 → 先满足 startForegroundService
+        // 5s 契约再自杀，否则 RemoteServiceException 崩溃；stopForeground(REMOVE) 已清通知）
+        if (exo != null) { try { exo.stop(); exo.clearMediaItems(); } catch (Throwable ignored) {} }
+        musicActuallyPlaying = false;
+        try {
+          startForeground(NOTIFICATION_ID, minimalFg(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+        } catch (Throwable ignored) {}
+        stopServiceCleanly();
+        return START_NOT_STICKY;
+      }
       if (exo == null) {
         try {
           startForeground(NOTIFICATION_ID, minimalFg(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
@@ -354,9 +374,6 @@ public class YayaExoService extends Service {
         int rep = intent.getIntExtra("repeat", 0);
         currentRepeat = rep;
         exo.setRepeatMode(rep == 1 ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
-      } else if ("stop".equals(cmd)) {
-        if (exo != null) { exo.stop(); exo.clearMediaItems(); }
-        stopServiceCleanly();
       }
     }
     return START_NOT_STICKY;
@@ -611,6 +628,8 @@ public class YayaExoService extends Service {
 
   @Override
   public void onDestroy() {
+    serviceAlive = false;
+    musicActuallyPlaying = false;
     stopPolling();
     try {
       // 防御：撤前台通知（部分 ColorOS ROM 不随 onDestroy 自动撤，残留幽灵媒体卡）

@@ -28,6 +28,10 @@ class MainActivity : ReactActivity() {
 
   override fun onPause() {
     super.onPause()
+    // 视频（直播/录播/网页）在播并被系统小窗（PiP）接管时，绝不重声明音乐会话——
+    // 否则 SystemUI 的 PiP/媒体控件会绑到音乐而非画面中的视频（用户反馈"控件控制的是音乐"根因之一）。
+    // 仅无视频在播（听歌/一般页面切后台）才补发音乐会话重声明。
+    if (PipModule.videoPlaying) return
     // 离开前台（按 Home/切应用/进通知栏）前重声明 Exo 会话：
     // ColorOS 在「音乐页→App 首页→再切后台」路径上把媒体卡绑到过期会话状态 → 通知栏/锁屏控件失灵。
     // 关键点：此路径在切后台前没有 onResume（导航回首页不触发 resume），
@@ -82,6 +86,17 @@ class MainActivity : ReactActivity() {
         enterPictureInPictureMode(PipModule.buildPipParams())
       } catch (_: Exception) {
         // 部分 ROM 限制，静默
+      }
+      // 视频小窗接管媒体身份：音乐若只是"暂停/未起播"（服务与通知仍在）则彻底停掉，
+      // 释放其 MediaSession，避免 SystemUI 把 PiP/通知卡控件绑到音乐上。
+      // 音乐真正在放（playWhenReady，罕见双音场景）则不打断。
+      if (!YayaExoService.musicActuallyPlaying) {
+        try {
+          startService(
+            android.content.Intent(this, YayaExoService::class.java)
+              .putExtra("cmd", "stop")
+          )
+        } catch (_: Throwable) { }
       }
     }
   }
