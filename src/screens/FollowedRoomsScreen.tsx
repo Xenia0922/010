@@ -2612,6 +2612,27 @@ export default function FollowedRoomsScreen() {
                 <ScalePressable
                   style={styles.roomRowMain}
                   onPress={() => item.member && openRoom(item.member)}
+                  onLongPress={() => {
+                    // 长按卡片整行 = 置顶排序（上移/下移/取消置顶）；短按仍是进房间
+                    const i = pinned.indexOf(item.memberId);
+                    if (i === -1) {
+                      // 未置顶：长按直接置顶（第一个置顶常用操作）
+                      togglePin(item.memberId);
+                      return;
+                    }
+                    if (pinned.length <= 1) return;
+                    Alert.alert(
+                      t('置顶排序'),
+                      shortName(item.member, item.memberId),
+                      [
+                        { text: t('上移'), onPress: () => i > 0 && movePin(item.memberId, -1) },
+                        { text: t('下移'), onPress: () => i < pinned.length - 1 && movePin(item.memberId, 1) },
+                        { text: t('取消置顶'), style: 'destructive', onPress: () => togglePin(item.memberId) },
+                        { text: t('取消'), style: 'cancel' },
+                      ],
+                    );
+                  }}
+                  delayLongPress={400}
                   pressedScale={0.98}
                   activeOpacity={0.9}
                 >
@@ -2646,8 +2667,8 @@ export default function FollowedRoomsScreen() {
                         </View>
                       ) : null}
                     </View>
-                    {/* 房间列表信息区恢复原版布局：team 独立行 + 大房间预览 + 小房间预览
-                        行间紧排, 总高压缩在封面区 80px 内 → 全部卡恒高, 等高 */}
+                    {/* 房间列表信息区恢复原版布局：team 独立行 + 大房间预览 + 小房间预览（各一行）。
+                        卡片总高用 minHeight 拉齐：行少成员内容靠底部留白补足 */}
                     {team ? (
                       <Text style={[styles.roomTeam, { color: palette.labelTertiary }]} numberOfLines={1}>{team}</Text>
                     ) : null}
@@ -2683,24 +2704,6 @@ export default function FollowedRoomsScreen() {
                   <ScalePressable
                     style={[styles.roomPinBtn, { backgroundColor: isPinned ? palette.tintSoft : palette.fill2 }]}
                     onPress={() => togglePin(item.memberId)}
-                    onLongPress={() => {
-                      // 长按置顶徽标弹出上下移菜单(原本右侧排序胶囊占用 31px 高度
-                      // 导致置顶成员卡比非置顶高 ~37px; 改成 sheet 后 actions 列高度恒定,
-                      // 所有卡片等高)
-                      if (!isPinned || pinned.length <= 1) return;
-                      const i = pinned.indexOf(item.memberId);
-                      Alert.alert(
-                        t('置顶排序'),
-                        shortName(item.member, item.memberId),
-                        [
-                          { text: t('上移'), onPress: () => i > 0 && movePin(item.memberId, -1) },
-                          { text: t('下移'), onPress: () => i < pinned.length - 1 && movePin(item.memberId, 1) },
-                          { text: t('取消置顶'), style: 'destructive', onPress: () => togglePin(item.memberId) },
-                          { text: t('取消'), style: 'cancel' },
-                        ],
-                      );
-                    }}
-                    delayLongPress={350}
                     pressedScale={0.9}
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
