@@ -108,7 +108,8 @@ export function AppTabBar({ items, activeKey, onSelect }: AppTabBarProps) {
         style={[
           styles.bar,
           {
-            backgroundColor: isDark ? 'rgba(20,20,26,0.42)' : 'rgba(255,255,255,0.40)',
+            // 灰调实底（非纯白）：浅色 #F2F3F7 系, 更实不透虚；深色暖灰
+            backgroundColor: isDark ? 'rgba(26,27,32,0.74)' : 'rgba(242,243,247,0.80)',
             borderColor: palette.innerStroke,
           },
         ]}
@@ -117,16 +118,16 @@ export function AppTabBar({ items, activeKey, onSelect }: AppTabBarProps) {
         <BlurView
           style={StyleSheet.absoluteFill}
           tint={isDark ? 'dark' : 'light'}
-          intensity={isDark ? 42 : 58}
+          intensity={isDark ? 58 : 72}
         />
-        {/* tint 色相层：在模糊之上叠半透主题色，保证文字可读（苹果玻璃的色调来源） */}
+        {/* tint 色相层：轻叠主题色相即可(底已是灰调), 保证文字可读且不泛白 */}
         <View
           style={[
             StyleSheet.absoluteFill,
             {
               backgroundColor: isDark
-                ? 'rgba(255,255,255,0.06)'
-                : 'rgba(255,255,255,0.26)',
+                ? 'rgba(255,255,255,0.05)'
+                : 'rgba(255,255,255,0.12)',
             },
           ]}
         />

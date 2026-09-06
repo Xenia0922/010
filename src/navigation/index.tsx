@@ -183,7 +183,8 @@ function MainTabs() {
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: 'transparent' },
-        animation: 'none',
+        // tab 切换淡入（v7 内建；None=生硬瞬切）
+        animation: 'fade',
       }}
     >
       <Tab.Screen name="Home" component={HomeTabScreen} options={{ tabBarLabel: '主页' }} />
