@@ -1,3 +1,4 @@
+import { NativeModules, Platform } from 'react-native';
 import { useSettingsStore } from '../store';
 import { requestJson } from '../utils/network';
 
@@ -126,6 +127,19 @@ export const bilibiliApi = {
       { headers: biliHeaders('', 'https://passport.bilibili.com/') },
     );
     return assertBiliOk(res, 'B站扫码状态获取失败');
+  },
+
+  /** B站 2024+ 新协议：扫码确认后 poll 只回 ticket 型 crossDomain url（如
+   *  https://passport.biligame.com/x/passport-login/web/crossDomain?ticket=xxx&gourl=...），
+   *  cookie 由访问该 url 时服务端 Set-Cookie 响应头下发。RN fetch 自动跟随 302 拿不到该头，
+   *  走原生 BiliLoginModule（followRedirects=false 停在首包读 Set-Cookie）。返回 "k=v; k=v" 串。 */
+  async exchangeTicket(crossDomainUrl: string) {
+    const M: any = (NativeModules as any)?.BiliLoginModule;
+    if (Platform.OS !== 'android' || !M?.fetchTicket) {
+      throw new Error('当前环境不支持 B站 ticket 换 cookie（需 Android 原生模块）');
+    }
+    const raw = await M.fetchTicket(String(crossDomainUrl));
+    return String(raw || '');
   },
 
   async getRoomInit(roomId: string) {

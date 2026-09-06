@@ -83,6 +83,22 @@ function buildBilibiliCookieFromUrl(rawUrl = ''): string {
   return cookie;
 }
 
+/** 从原生模块返回的 "k=v; k=v"（Set-Cookie 头拼串）里挑出 B站 常用键。
+ *  注意与 url query 解析不同：cookie 串按 ';' 分段，值里不含 ';'。 */
+function pickBiliCookies(raw = ''): string {
+  const parts = String(raw)
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return BILI_COOKIE_KEYS
+    .map((key) => {
+      const hit = parts.find((p) => p.startsWith(`${key}=`));
+      return hit || '';
+    })
+    .filter(Boolean)
+    .join('; ');
+}
+
 /** Token 掩码：只显示首 6 + 尾 4 字符，避免完整 Token 常驻屏幕 */
 function maskToken(token: string): string {
   const t = String(token || '');
@@ -342,11 +358,26 @@ export default function LoginScreen() {
       try {
         const res = await bilibiliApi.pollQrCode(key);
         if (res.data.code === 0) {
-          const cookie = buildBilibiliCookieFromUrl(res.data?.url || '');
+          const rawUrl = String(res.data?.url || '');
+          let cookie = buildBilibiliCookieFromUrl(rawUrl);
+          if (!cookie.includes('SESSDATA') && /ticket=|crossDomain/i.test(rawUrl)) {
+            // B站 2024+ 新协议：poll 只回 ticket url，cookie 在 crossDomain 302 的 Set-Cookie 里
+            // → 原生 BiliLoginModule（followRedirects=false 读首包）换 cookie
+            try {
+              const raw = await bilibiliApi.exchangeTicket(rawUrl);
+              cookie = pickBiliCookies(raw);
+              logWarn(
+                `[bili-login] ticket 换 cookie ${cookie.includes('SESSDATA') ? '成功' : '失败（无 SESSDATA）'} 原生返: ${raw.slice(0, 200)}`,
+                'login.pollBili',
+              );
+            } catch (e) {
+              logWarn('[bili-login] ticket 换 cookie 异常: ' + errorMessage(e), 'login.pollBili');
+            }
+          }
           if (!cookie.includes('SESSDATA')) {
             // 记录真实回调 url（截断），下次仍失败时 logcat 可定位是 B站侧缺参数还是解析问题
             logWarn(
-              `[bili-login] 扫码已确认但 url 未解析出 SESSDATA（前 200 字符）: ${String(res.data?.url || '').slice(0, 200)} code=${res.data?.code}`,
+              `[bili-login] 扫码已确认但 url 未解析出 SESSDATA（前 200 字符）: ${rawUrl.slice(0, 200)} code=${res.data?.code}`,
               'login.pollBili',
             );
             setBiliStatus(t('B站已确认但没有拿到Cookie'));
