@@ -4,6 +4,7 @@ import { LiveExoView } from '../../native/LivePlayer';
 import { usePlayerStore } from '../store/playerStore';
 import { PlayerSource } from '../types';
 import { logInfo } from '../../utils/runtimeLog';
+import { setPipAspect } from '../../utils/pip';
 
 interface Props {
   source: PlayerSource;
@@ -37,10 +38,14 @@ export function ExoKernel({ source, onError }: Props) {
       url={source.url}
       audioOnly={source.audioOnly}
       paused={paused}
-      onSize={() => {
+      onSize={(e) => {
         // 首帧画面尺寸 = 已开始播放 → 结束 loading
         try { logInfo('[live] ExoKernel first frame (onSize) → playing', 'player.exo'); } catch {}
         usePlayerStore.getState().setState('playing');
+        // 同步 PiP 窗口比例（成员直播多为竖屏；不跟则系统小窗按默认 16:9 裁边）
+        const w = Number(e?.nativeEvent?.width) || 0;
+        const h = Number(e?.nativeEvent?.height) || 0;
+        if (w > 0 && h > 0) setPipAspect(w, h);
       }}
       onError={(e) => {
         onError(String(e?.nativeEvent?.message || '').slice(0, 160) || '无法连接直播源');

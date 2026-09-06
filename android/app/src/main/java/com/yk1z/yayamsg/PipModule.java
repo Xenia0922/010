@@ -90,6 +90,13 @@ public class PipModule extends ReactContextBaseJavaModule {
     refreshPipActions();
   }
 
+  /** 系统小窗总开关（设置页「小窗播放」/ 启动同步）：false 时 onUserLeaveHint 不自动进 PiP。
+   *  ⚠️ 曾漏实现此方法：JS setPipEnabled 抛错被 catch，pipEnabled 恒 false → 真机开开关退出也不弹系统小窗。 */
+  @ReactMethod
+  public void setPipEnabled(boolean enabled) {
+    pipEnabled = enabled;
+  }
+
   @Override
   public void onCatalystInstanceDestroy() {
     try {
