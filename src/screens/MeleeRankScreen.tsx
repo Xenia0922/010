@@ -311,7 +311,9 @@ const Podium = React.memo(function Podium({ ranks }: { ranks: any[] }) {
   const { t } = useI18n();
   const medal = (i: number) => (i === 0 ? 'trophy' : i === 1 ? 'medal-outline' : 'medal-outline');
   const order = [ranks[1], ranks[0], ranks[2]]; // 2nd | 1st | 3rd
-  const heights = [76, 96, 64];
+  // 柱高按「名次」索引（0=第1名），此前写成 order 顺序 [76,96,64] 却用 realIndex 取值，
+  // 导致第 2 名柱子比第 1 名还高（领奖台排版错乱）
+  const heights = [96, 76, 64];
   const tones = [palette.fill2, palette.tintSoft, palette.fill2];
   return (
     <FadeInView delay={60} duration={320} style={{ marginBottom: 12 }}>
@@ -381,7 +383,8 @@ const RankCard = React.memo(function RankCard({ item, index, max }: { item: any;
   const topUser = String(topU.userName || topU.nickname || '');
   const melee = Number(item.melee || item.meleeValue || item.score || item.total || item.charm || '0');
   const isTop = rankNum <= 3;
-  const pct = Math.max(2, (melee / max) * 100);
+  // 除零保护：max 为 0（全榜 0 值/异常）时此前会产生 Infinity% → RN 宽度告警 + 进度条错乱
+  const pct = max > 0 ? Math.max(2, Math.min(100, (melee / max) * 100)) : 2;
 
   return (
     <FadeInView delay={60 + (index < 12 ? index * 25 : 0)} duration={300}>
@@ -420,7 +423,10 @@ const RankCard = React.memo(function RankCard({ item, index, max }: { item: any;
         </View>
         <View style={styles.meleeWrap}>
           <MaterialCommunityIcons name="food-drumstick-outline" size={16} color={palette.tint} />
-          <Text style={[styles.meleeValue, { color: palette.tint }]}>{melee}</Text>
+          {/* 大数值缩写 + 单行：此前长数字会挤压名字列/换行破版 */}
+          <Text style={[styles.meleeValue, { color: palette.tint }]} numberOfLines={1}>
+            {melee >= 10000 ? `${(melee / 10000).toFixed(1)}w` : String(melee)}
+          </Text>
         </View>
       </View>
     </FadeInView>

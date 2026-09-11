@@ -6,7 +6,7 @@
  * - 区块入场 FadeInView 错峰
  * 业务逻辑 / API / 数据流 / 路由 / i18n 原文一律不动，仅重组布局。
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { toMs } from '../utils/format';
 import {
   Alert,
@@ -32,7 +32,7 @@ import { FadeInView, ScalePressable } from '../components/Motion';
 import RuntimeLogViewer from '../components/RuntimeLogViewer';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { APP_VERSION } from '../constants';
-import { getMemberDataMeta, MemberDataMeta } from '../services/memberData';
+import { getMemberDataMeta, MemberDataMeta, updateMemberData } from '../services/memberData';
 import { usePalette, radii, radiiAlias, usePageBackground } from '../theme';
 import { typography } from '../theme/typography';
 import { useI18n, LANGUAGE_OPTIONS } from '../i18n';
@@ -148,10 +148,27 @@ export default function SettingsScreen() {
   const hasUpdate = useUpdateStore((s) => s.hasUpdate);
   const [meta, setMeta] = useState<MemberDataMeta | null>(null);
   const [logVisible, setLogVisible] = useState(false);
+  const [memberSyncing, setMemberSyncing] = useState(false);
 
   useEffect(() => {
     getMemberDataMeta().then(setMeta).catch(() => {});
   }, []);
+
+  /** 手动更新成员数据库（双源: yk1z 库 + 官方接口） */
+  const manualSyncMembers = useCallback(async () => {
+    if (memberSyncing) return;
+    setMemberSyncing(true);
+    try {
+      const res = await updateMemberData();
+      const fresh = await getMemberDataMeta();
+      setMeta(fresh);
+      showToast(res?.detail ? t('更新成功：{detail}', { detail: res.detail }) : t('成员数据已更新'));
+    } catch (e: any) {
+      showToast(t('更新失败：{msg}（已保留本地数据）', { msg: e?.message || String(e) }));
+    } finally {
+      setMemberSyncing(false);
+    }
+  }, [memberSyncing, t, showToast]);
 
   const backgroundValue = settings.customBackgroundFile?.trim() || '';
   const backgroundInfo = (() => {
@@ -240,6 +257,13 @@ export default function SettingsScreen() {
             title={t('本项目仓库')}
             value="Xenia0922/yaya_msg_mobile"
             onPress={() => Linking.openURL('https://github.com/Xenia0922/yaya_msg_mobile').catch(() => {})}
+          />
+          <View style={[styles.divider, { backgroundColor: palette.innerStroke }]} />
+          <Row
+            icon="github"
+            title={t('桌面端项目（致敬）')}
+            value="yk1z/yaya_msg"
+            onPress={() => Linking.openURL('https://github.com/yk1z/yaya_msg').catch(() => {})}
           />
           <View style={[styles.divider, { backgroundColor: palette.innerStroke }]} />
           <Row
@@ -367,6 +391,13 @@ export default function SettingsScreen() {
             <MaterialCommunityIcons name="sync" size={16} color={palette.tint} />
             <Text style={[styles.autoSyncText, { color: palette.labelSecondary }]}>{t('进入软件时自动同步成员数据')}</Text>
           </View>
+          <View style={[styles.divider, { backgroundColor: palette.innerStroke }]} />
+          <Row
+            icon="cloud-download"
+            title={t('手动更新成员数据')}
+            value={memberSyncing ? t('更新中…') : t('立即同步')}
+            onPress={manualSyncMembers}
+          />
           <Text style={[styles.note, { color: palette.labelTertiary }]}>
             {t('成员数据共 {count} 位，数据来源于 yk1z 数据库（yk1z/yaya_msg），进入软件时自动同步最新。', { count: memberCount })}
           </Text>
